@@ -93,11 +93,15 @@
       z-index: 100; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #volBtn {
-      position: fixed; bottom: 20px; right: 16px;
-      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.5); font-size: 1.2rem; width: 40px; height: 40px;
-      border-radius: 50%; cursor: pointer; z-index: 100; display:flex; align-items:center; justify-content:center;
+      position: fixed; bottom: 76px; right: 16px;
+      background: rgba(255,255,255,0.1); border: 1.5px solid rgba(255,255,255,0.2);
+      color: rgba(255,255,255,0.75); font-size: 1.3rem; width: 48px; height: 48px;
+      border-radius: 50%; cursor: pointer; z-index: 300;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 0 12px rgba(108,99,255,0.3);
     }
+    #volBtn:active { background: rgba(255,255,255,0.25); transform: scale(0.92); }
     #tauntBtn {
       position: fixed; bottom: 28px; z-index: 200; display: none;
       border: none; border-radius: 14px;
@@ -112,6 +116,17 @@
     #tauntBtn.guest-side { right: 18px; }
     #tauntBtn:active { transform: scale(0.92); }
     #tauntBtn.cooling { opacity: 0.28; pointer-events: none; }
+    #musicPrompt {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: linear-gradient(135deg, rgba(108,99,255,0.95), rgba(60,30,120,0.97));
+      color: white; text-align: center; padding: 18px 20px 22px;
+      font-size: 1rem; font-weight: 700; z-index: 500;
+      border-top: 1px solid rgba(255,255,255,0.15);
+      cursor: pointer; letter-spacing: 0.5px;
+      animation: slideUp 0.4s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    #musicPrompt span { font-size: 1.4rem; display: block; margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -121,6 +136,9 @@
 <button id="volBtn" onclick="toggleMute()" title="Toggle music">🔊</button>
 <button id="tauntBtn" onclick="fireTaunt()">💥 TOMA PUTO</button>
 <div id="toast"></div>
+<div id="musicPrompt" onclick="tapToStartMusic()" style="display:none">
+  <span>🎵</span>Tap here to enable music
+</div>
 
 <!-- LOBBY -->
 <div class="screen active" id="lobbyScreen">
@@ -313,38 +331,69 @@ const THEMES = [
   }
 ];
 
-function initAudio() {
-  if (audioCtx) {
-    // Always try to resume — mobile browsers suspend context until gesture
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume().then(() => {
-        if (activeNodes.length === 0) startLobbyMusic();
-      });
-    }
-    return;
+function initAudio(onReady) {
+  // Step 1: create context synchronously (required by iOS Safari)
+  if (!audioCtx) {
+    audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = muted ? 0 : 0.75;
+    masterGain.connect(audioCtx.destination);
   }
-  audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
-  masterGain = audioCtx.createGain();
-  masterGain.gain.value = muted ? 0 : 0.75;
-  masterGain.connect(audioCtx.destination);
-  // Start lobby music immediately once context is running
-  const tryStart = () => {
-    if (audioCtx.state === 'running') {
-      startLobbyMusic();
-    } else {
-      audioCtx.resume().then(tryStart);
-    }
+
+  const ready = () => {
+    hideMusicPrompt();
+    if (onReady) { onReady(); return; }
+    // Default: start lobby music if nothing is playing
+    if (activeNodes.length === 0 && !muted) startLobbyMusic();
   };
-  tryStart();
+
+  // Step 2: resume — on Android the Promise must resolve before scheduling notes
+  if (audioCtx.state === 'running') {
+    ready();
+  } else {
+    // Call resume() synchronously (unlocks iOS), then wait for Promise (needed for Android)
+    audioCtx.resume().then(ready).catch(() => {
+      // Fallback: try again after a short delay
+      setTimeout(() => { audioCtx.resume().then(ready); }, 200);
+    });
+  }
 }
 
 function toggleMute() {
+  if (!audioCtx) {
+    // First time: init audio, then flip mute state after context is ready
+    initAudio(() => {
+      muted = false;
+      document.getElementById('volBtn').textContent = '🔊';
+      if (masterGain) masterGain.gain.value = 0.75;
+      if (activeNodes.length === 0) startLobbyMusic();
+      showToast('🔊 Music on');
+    });
+    return;
+  }
+
   muted = !muted;
   document.getElementById('volBtn').textContent = muted ? '🔇' : '🔊';
-  if (masterGain) {
-    masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-    masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.75, audioCtx.currentTime + 0.3);
+
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().then(() => applyMuteGain());
+  } else {
+    applyMuteGain();
   }
+
+  if (!muted && activeNodes.length === 0) {
+    if (audioCtx.state === 'running') startLobbyMusic();
+    else audioCtx.resume().then(() => startLobbyMusic());
+  }
+
+  showToast(muted ? '🔇 Music off' : '🔊 Music on');
+}
+
+function applyMuteGain() {
+  if (!masterGain) return;
+  const now = audioCtx.currentTime;
+  masterGain.gain.cancelScheduledValues(now);
+  masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.75, now + 0.3);
 }
 
 function stopAllAudio(fadeTime = 1.5) {
@@ -630,6 +679,24 @@ function drawTaunt(cw, ch) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  MUSIC PROMPT HELPERS
+// ═══════════════════════════════════════════════════════
+function showMusicPrompt() {
+  if (audioUnlocked) return;
+  const p = document.getElementById('musicPrompt');
+  if (p) p.style.display = 'block';
+}
+function hideMusicPrompt() {
+  const p = document.getElementById('musicPrompt');
+  if (p) p.style.display = 'none';
+}
+function tapToStartMusic() {
+  audioUnlocked = true;
+  hideMusicPrompt();
+  initAudio();
+}
+
+// ═══════════════════════════════════════════════════════
 //  ASTEROIDS
 // ═══════════════════════════════════════════════════════
 function spawnAsteroid() {
@@ -760,6 +827,7 @@ function initPeer(id, onOpen) {
 //  HOST FLOW
 // ═══════════════════════════════════════════════════════
 function createGame() {
+  initAudio(); // ensure audio context created from this gesture
   isHost = true; myCode = generateCode();
   document.getElementById('roomCodeDisplay').textContent = myCode;
   showScreen('waitingScreen');
@@ -785,6 +853,7 @@ function cancelHost() {
 //  GUEST FLOW
 // ═══════════════════════════════════════════════════════
 function joinGame() {
+  initAudio(); // ensure audio context created from this gesture
   const rawCode = document.getElementById('joinCodeInput').value.trim().toUpperCase();
   if (rawCode.length < 4) { showToast('Enter a valid code'); return; }
   isHost = false; myCode = rawCode;
@@ -1301,21 +1370,26 @@ setInterval(() => {
 // ═══════════════════════════════════════════════════════
 resizeCanvas();
 setConnStatus(false, '–');
+// Show music prompt on lobby — the surest way to unlock audio on Android
+showMusicPrompt();
 
 // Browsers block audio until a user gesture. We listen on the whole
 // document for the first touch OR click, then create + start the context.
+// ── Audio unlock on first gesture ──
 let audioUnlocked = false;
 function unlockAudioOnce() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  document.removeEventListener('touchstart', unlockAudioOnce, true);
-  document.removeEventListener('mousedown',  unlockAudioOnce, true);
-  document.removeEventListener('keydown',    unlockAudioOnce, true);
-  initAudio(); // creates context and calls startLobbyMusic() once running
+  document.removeEventListener('touchend', unlockAudioOnce);
+  document.removeEventListener('mousedown', unlockAudioOnce);
+  document.removeEventListener('keydown', unlockAudioOnce);
+  initAudio();
 }
-document.addEventListener('touchstart', unlockAudioOnce, true);
-document.addEventListener('mousedown',  unlockAudioOnce, true);
-document.addEventListener('keydown',    unlockAudioOnce, true);
+// Use touchend (not touchstart) — more reliable on Android Chrome as it
+// fires AFTER the browser confirms it's a real gesture, not a scroll
+document.addEventListener('touchend',  unlockAudioOnce);
+document.addEventListener('mousedown', unlockAudioOnce);
+document.addEventListener('keydown',   unlockAudioOnce);
 </script>
 </body>
 </html>
