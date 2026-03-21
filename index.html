@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Ping Pong Online</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #050510;
+      --surface: #0f0f2a;
+      --border: #2a2a5a;
+      --accent: #6c63ff;
+      --accent2: #ff6584;
+      --text: #e8e8ff;
+      --muted: #7070aa;
+      --green: #00e676;
+      --glow: 0 0 20px rgba(108,99,255,0.5);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+    }
+
+    /* ── SCREENS ── */
+    .screen {
+      display: none;
+      width: 100%; height: 100%;
+      position: absolute; top: 0; left: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .screen.active { display: flex; }
+
+    /* ── LOBBY ── */
+    .logo {
+      font-size: clamp(2rem, 8vw, 3.5rem);
+      font-weight: 900;
+      letter-spacing: -2px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .tagline {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 48px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .btn {
+      width: 100%;
+      max-width: 320px;
+      padding: 16px 24px;
+      border: none;
+      border-radius: 16px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+      margin-bottom: 14px;
+      letter-spacing: 0.5px;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #9c5fff);
+      color: white;
+      box-shadow: var(--glow);
+    }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1.5px solid var(--border);
+    }
+    .btn-success {
+      background: linear-gradient(135deg, #00c853, #00e676);
+      color: #002a0a;
+    }
+    .btn-danger {
+      background: linear-gradient(135deg, #ff1744, #ff6584);
+      color: white;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .input-group {
+      width: 100%;
+      max-width: 320px;
+      margin-bottom: 12px;
+    }
+    .input-group input {
+      width: 100%;
+      padding: 16px 18px;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      color: var(--text);
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-align: center;
+      text-transform: uppercase;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .input-group input:focus { border-color: var(--accent); }
+    .input-group input::placeholder { color: var(--muted); letter-spacing: 2px; font-size: 1rem; font-weight: 400; }
+
+    /* ── WAITING / CODE SCREEN ── */
+    .room-code {
+      font-size: clamp(2.5rem, 12vw, 5rem);
+      font-weight: 900;
+      letter-spacing: 10px;
+      background: linear-gradient(135deg, var(--green), #00bcd4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      padding: 24px 32px;
+      background-color: rgba(0,230,118,0.05);
+      border: 2px solid rgba(0,230,118,0.2);
+      border-radius: 20px;
+      margin: 20px 0;
+      cursor: pointer;
+    }
+    .label {
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 8px;
+    }
+    .pulse-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: inline-block;
+      margin-right: 8px;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+    .waiting-text {
+      color: var(--muted);
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+    }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed;
+      bottom: 32px; left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: rgba(108,99,255,0.9);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 50px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: transform 0.3s ease;
+      z-index: 999;
+      white-space: nowrap;
+      backdrop-filter: blur(12px);
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── GAME SCREEN ── */
+    #gameScreen {
+      padding: 0;
+      background: var(--bg);
+    }
+    #gameCanvas {
+      display: block;
+      touch-action: none;
+    }
+
+    /* ── GAME OVER ── */
+    .winner-emoji { font-size: 5rem; margin-bottom: 16px; }
+    .winner-text {
+      font-size: clamp(1.5rem, 6vw, 2.5rem);
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+    .final-score {
+      font-size: 1.2rem;
+      color: var(--muted);
+      margin-bottom: 36px;
+    }
+
+    /* ── CONNECTION STATUS ── */
+    #connStatus {
+      position: fixed;
+      top: 12px; right: 12px;
+      font-size: 0.7rem;
+      color: var(--muted);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .dot.connected { background: var(--green); }
+
+    /* ── DIVIDER ── */
+    .divider {
+      display: flex; align-items: center; gap: 12px;
+      width: 100%; max-width: 320px;
+      margin: 4px 0 16px;
+      color: var(--muted); font-size: 0.8rem;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1;
+      height: 1px; background: var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<!-- Connection Status -->
+<div id="connStatus"><span class="dot" id="connDot"></span><span id="connLabel">–</span></div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- ══════════════════════════════════════════
+     LOBBY SCREEN
+══════════════════════════════════════════ -->
+<div class="screen active" id="lobbyScreen">
+  <div class="logo">🏓 PONG</div>
+  <div class="tagline">Real-time · Peer to Peer</div>
+  <button class="btn btn-primary" onclick="createGame()">Create Game</button>
+  <div class="divider">or</div>
+  <div class="input-group">
+    <input type="text" id="joinCodeInput" placeholder="Enter room code" maxlength="6" oninput="this.value=this.value.toUpperCase()" />
+  </div>
+  <button class="btn btn-secondary" onclick="joinGame()">Join Game →</button>
+  <p style="color:var(--muted);font-size:0.75rem;margin-top:24px;text-align:center;max-width:280px;">
+    Works directly between browsers — no account needed.<br/>Powered by WebRTC (PeerJS).
+  </p>
+</div>
+
+<!-- ══════════════════════════════════════════
+     WAITING SCREEN (Host)
+══════════════════════════════════════════ -->
+<div class="screen" id="waitingScreen">
+  <div class="label">Your room code</div>
+  <div class="room-code" id="roomCodeDisplay" onclick="copyCode()" title="Tap to copy">??????</div>
+  <p style="font-size:0.8rem;color:var(--muted);margin-bottom:24px;">Tap code to copy · Share with your opponent</p>
+  <div class="waiting-text"><span class="pulse-dot"></span>Waiting for opponent…</div>
+  <div style="height:32px"></div>
+  <button class="btn btn-secondary" style="max-width:220px" onclick="cancelHost()">Cancel</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     JOINING SCREEN (Guest)
+══════════════════════════════════════════ -->
+<div class="screen" id="joiningScreen">
+  <div style="font-size:2rem;margin-bottom:16px;">🔗</div>
+  <div class="waiting-text" style="margin-bottom:8px;"><span class="pulse-dot"></span>Connecting to game…</div>
+  <p style="color:var(--muted);font-size:0.85rem;margin-bottom:32px;" id="joiningLabel">Room: ??????</p>
+  <button class="btn btn-secondary" style="max-width:220px" onclick="cancelJoin()">Cancel</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     GAME SCREEN
+══════════════════════════════════════════ -->
+<div class="screen" id="gameScreen">
+  <canvas id="gameCanvas"></canvas>
+</div>
+
+<!-- ══════════════════════════════════════════
+     GAME OVER SCREEN
+══════════════════════════════════════════ -->
+<div class="screen" id="gameOverScreen">
+  <div class="winner-emoji" id="winnerEmoji">🏆</div>
+  <div class="winner-text" id="winnerText">You Win!</div>
+  <div class="final-score" id="finalScore">7 – 3</div>
+  <button class="btn btn-primary" onclick="playAgain()">Play Again</button>
+  <button class="btn btn-secondary" onclick="goHome()">Home</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════════
+const WINNING_SCORE = 7;
+const PADDLE_W = 14;
+const PADDLE_H_RATIO = 0.18;
+const BALL_RADIUS_RATIO = 0.018;
+const INITIAL_BALL_SPEED_RATIO = 0.007;
+const MAX_BALL_SPEED_RATIO = 0.018;
+const SPEED_INCREMENT = 1.035;
+const FPS_TARGET = 60;
+const NET_SEND_RATE = 1; // send every frame
+
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+let peer = null;
+let conn = null;
+let isHost = false;
+let myCode = '';
+let frameId = null;
+let lastTime = 0;
+
+const score = { host: 0, guest: 0 };
+let ball = {};
+let hostPaddle = {};
+let guestPaddle = {};
+let guestPaddleY = 0.5; // normalized 0–1, received from guest
+let myTouchY = null;
+let gameRunning = false;
+let countdownVal = 0;
+let countdownTimer = null;
+
+// ═══════════════════════════════════════════════════════
+//  CANVAS
+// ═══════════════════════════════════════════════════════
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  if (!gameRunning) return;
+  // Reposition paddles proportionally
+  hostPaddle.x = PADDLE_W * 2;
+  hostPaddle.w = PADDLE_W;
+  hostPaddle.h = canvas.height * PADDLE_H_RATIO;
+  guestPaddle.x = canvas.width - PADDLE_W * 2 - PADDLE_W;
+  guestPaddle.w = PADDLE_W;
+  guestPaddle.h = canvas.height * PADDLE_H_RATIO;
+}
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 300));
+
+// ═══════════════════════════════════════════════════════
+//  SCREEN MANAGEMENT
+// ═══════════════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function setConnStatus(connected, label) {
+  document.getElementById('connDot').className = 'dot' + (connected ? ' connected' : '');
+  document.getElementById('connLabel').textContent = label;
+}
+
+function showToast(msg, duration = 2000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ═══════════════════════════════════════════════════════
+//  PEER SETUP
+// ═══════════════════════════════════════════════════════
+function generateCode() {
+  return Math.random().toString(36).substr(2, 6).toUpperCase();
+}
+
+function initPeer(id, onOpen) {
+  if (peer) { peer.destroy(); peer = null; }
+  setConnStatus(false, 'Connecting…');
+  peer = new Peer(id, {
+    debug: 0,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ]
+    }
+  });
+  peer.on('open', (id) => {
+    setConnStatus(false, 'Ready · ' + id.substr(0,6));
+    if (onOpen) onOpen(id);
+  });
+  peer.on('error', (err) => {
+    console.error('PeerJS error:', err);
+    if (err.type === 'unavailable-id') {
+      // ID taken — retry with new code
+      showToast('Code taken, generating new one…');
+      const newCode = generateCode();
+      myCode = newCode;
+      document.getElementById('roomCodeDisplay').textContent = newCode;
+      peer.destroy();
+      initPeer('PONG-' + newCode, onOpen);
+    } else {
+      showToast('Connection error: ' + err.type);
+      cancelHost();
+    }
+  });
+  peer.on('disconnected', () => setConnStatus(false, 'Disconnected'));
+}
+
+// ═══════════════════════════════════════════════════════
+//  HOST FLOW
+// ═══════════════════════════════════════════════════════
+function createGame() {
+  isHost = true;
+  myCode = generateCode();
+  document.getElementById('roomCodeDisplay').textContent = myCode;
+  showScreen('waitingScreen');
+  setConnStatus(false, 'Creating…');
+
+  initPeer('PONG-' + myCode, () => {
+    setConnStatus(false, 'Waiting for player…');
+    peer.on('connection', (c) => {
+      conn = c;
+      setupConn();
+    });
+  });
+}
+
+function copyCode() {
+  const code = document.getElementById('roomCodeDisplay').textContent;
+  navigator.clipboard?.writeText(code).then(() => showToast('📋 Code copied!')).catch(() => showToast(code));
+}
+
+function cancelHost() {
+  if (peer) { peer.destroy(); peer = null; }
+  if (frameId) { cancelAnimationFrame(frameId); frameId = null; }
+  gameRunning = false;
+  setConnStatus(false, '–');
+  showScreen('lobbyScreen');
+}
+
+// ═══════════════════════════════════════════════════════
+//  GUEST FLOW
+// ═══════════════════════════════════════════════════════
+function joinGame() {
+  const rawCode = document.getElementById('joinCodeInput').value.trim().toUpperCase();
+  if (rawCode.length < 4) { showToast('Enter a valid code'); return; }
+  isHost = false;
+  myCode = rawCode;
+  document.getElementById('joiningLabel').textContent = 'Room: ' + rawCode;
+  showScreen('joiningScreen');
+  setConnStatus(false, 'Connecting…');
+
+  initPeer(undefined, () => {
+    conn = peer.connect('PONG-' + rawCode, { reliable: false, serialization: 'json' });
+    setupConn();
+  });
+}
+
+function cancelJoin() {
+  if (peer) { peer.destroy(); peer = null; }
+  setConnStatus(false, '–');
+  showScreen('lobbyScreen');
+}
+
+// ═══════════════════════════════════════════════════════
+//  CONNECTION SETUP (shared host/guest)
+// ═══════════════════════════════════════════════════════
+function setupConn() {
+  conn.on('open', () => {
+    setConnStatus(true, isHost ? 'Host' : 'Guest');
+    if (isHost) {
+      showToast('🎮 Opponent connected!');
+      startGame();
+    } else {
+      showToast('✅ Connected to host!');
+    }
+  });
+
+  conn.on('data', (data) => {
+    if (!data || !data.type) return;
+    switch (data.type) {
+      case 'start':
+        if (!isHost) receiveStartGame(data);
+        break;
+      case 'state':
+        if (!isHost) receiveState(data);
+        break;
+      case 'paddle':
+        if (isHost) guestPaddleY = data.y;
+        break;
+      case 'point':
+        if (!isHost) receivePoint(data);
+        break;
+      case 'gameover':
+        if (!isHost) receiveGameOver(data);
+        break;
+      case 'restart':
+        if (!isHost) startGame(data.config);
+        break;
+    }
+  });
+
+  conn.on('close', () => {
+    setConnStatus(false, 'Disconnected');
+    if (gameRunning) {
+      gameRunning = false;
+      showToast('⚠️ Opponent disconnected', 3000);
+      setTimeout(() => showScreen('lobbyScreen'), 2500);
+    }
+  });
+
+  conn.on('error', (err) => {
+    showToast('Error: ' + err);
+    console.error(err);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  GAME INIT
+// ═══════════════════════════════════════════════════════
+function startGame(config) {
+  resizeCanvas();
+  score.host = 0;
+  score.guest = 0;
+  guestPaddleY = 0.5;
+  myTouchY = null;
+  gameRunning = true;
+
+  initPaddles();
+  resetBall(1);
+  setupTouchControls();
+  showScreen('gameScreen');
+
+  if (isHost) {
+    // Send start signal to guest with initial config
+    sendToGuest({
+      type: 'start',
+      config: { score: { ...score } }
+    });
+    startCountdown(3);
+  } else {
+    startCountdown(3);
+  }
+}
+
+function receiveStartGame(data) {
+  startGame(data.config);
+}
+
+function initPaddles() {
+  const cw = canvas.width, ch = canvas.height;
+  const ph = ch * PADDLE_H_RATIO;
+  hostPaddle = { x: PADDLE_W * 2, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
+  guestPaddle = { x: cw - PADDLE_W * 2 - PADDLE_W, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
+}
+
+function resetBall(direction = 1) {
+  const cw = canvas.width, ch = canvas.height;
+  const speed = cw * INITIAL_BALL_SPEED_RATIO;
+  const angle = (Math.random() * 60 - 30) * (Math.PI / 180);
+  ball = {
+    x: cw / 2, y: ch / 2,
+    vx: Math.cos(angle) * speed * direction,
+    vy: Math.sin(angle) * speed,
+    r: cw * BALL_RADIUS_RATIO,
+    speed: speed
+  };
+}
+
+function startCountdown(n) {
+  countdownVal = n;
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    countdownVal--;
+    if (countdownVal <= 0) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      countdownVal = 0;
+    }
+  }, 1000);
+
+  if (frameId) cancelAnimationFrame(frameId);
+  lastTime = performance.now();
+  frameId = requestAnimationFrame(gameLoop);
+}
+
+// ═══════════════════════════════════════════════════════
+//  TOUCH CONTROLS
+// ═══════════════════════════════════════════════════════
+function setupTouchControls() {
+  canvas.removeEventListener('touchstart', onTouchStart);
+  canvas.removeEventListener('touchmove', onTouchMove);
+  canvas.removeEventListener('touchend', onTouchEnd);
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  canvas.removeEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mousemove', onMouseMove);
+}
+
+function onTouchStart(e) { e.preventDefault(); updateTouch(e.touches[0]); }
+function onTouchMove(e) { e.preventDefault(); updateTouch(e.touches[0]); }
+function onTouchEnd(e) { e.preventDefault(); myTouchY = null; }
+function onMouseMove(e) { myTouchY = e.clientY / canvas.height; sendPaddleToHost(); }
+
+function updateTouch(touch) {
+  myTouchY = touch.clientY / canvas.height;
+  if (!isHost) sendPaddleToHost();
+}
+
+function sendPaddleToHost() {
+  if (!isHost && conn && conn.open && myTouchY !== null) {
+    sendToHost({ type: 'paddle', y: myTouchY });
+  }
+}
+
+function sendToHost(data) {
+  if (conn && conn.open) try { conn.send(data); } catch(e) {}
+}
+function sendToGuest(data) {
+  if (conn && conn.open) try { conn.send(data); } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════
+//  GAME LOOP (HOST authoritative)
+// ═══════════════════════════════════════════════════════
+function gameLoop(timestamp) {
+  if (!gameRunning) return;
+  const dt = Math.min((timestamp - lastTime) / (1000 / FPS_TARGET), 3);
+  lastTime = timestamp;
+
+  if (isHost && countdownVal <= 0) {
+    updateGame(dt);
+  }
+
+  render();
+
+  if (isHost && countdownVal <= 0) {
+    sendStateToGuest();
+  }
+
+  frameId = requestAnimationFrame(gameLoop);
+}
+
+function updateGame(dt) {
+  const cw = canvas.width, ch = canvas.height;
+
+  // Move host paddle (Player 1 = left)
+  if (myTouchY !== null) {
+    const targetY = myTouchY * ch - hostPaddle.h / 2;
+    hostPaddle.y += (targetY - hostPaddle.y) * 0.25 * dt;
+  }
+  hostPaddle.y = Math.max(0, Math.min(ch - hostPaddle.h, hostPaddle.y));
+
+  // Move guest paddle (Player 2 = right)
+  const guestTargetY = guestPaddleY * ch - guestPaddle.h / 2;
+  guestPaddle.y += (guestTargetY - guestPaddle.y) * 0.25 * dt;
+  guestPaddle.y = Math.max(0, Math.min(ch - guestPaddle.h, guestPaddle.y));
+
+  // Move ball
+  ball.x += ball.vx * dt;
+  ball.y += ball.vy * dt;
+
+  // Wall bounces (top/bottom)
+  if (ball.y - ball.r <= 0) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+  if (ball.y + ball.r >= ch) { ball.y = ch - ball.r; ball.vy = -Math.abs(ball.vy); }
+
+  // Paddle collisions
+  if (checkPaddleCollision(ball, hostPaddle, 1)) {} 
+  if (checkPaddleCollision(ball, guestPaddle, -1)) {}
+
+  // Scoring
+  if (ball.x < 0) {
+    awardPoint('guest');
+  } else if (ball.x > cw) {
+    awardPoint('host');
+  }
+}
+
+function checkPaddleCollision(b, paddle, direction) {
+  const hitX = direction === 1
+    ? (b.x - b.r <= paddle.x + paddle.w && b.x + b.r >= paddle.x && b.vx < 0)
+    : (b.x + b.r >= paddle.x && b.x - b.r <= paddle.x + paddle.w && b.vx > 0);
+
+  if (hitX && b.y + b.r >= paddle.y && b.y - b.r <= paddle.y + paddle.h) {
+    const relHit = (b.y - (paddle.y + paddle.h / 2)) / (paddle.h / 2);
+    const maxAngle = 65 * (Math.PI / 180);
+    const angle = relHit * maxAngle;
+    const newSpeed = Math.min(b.speed * SPEED_INCREMENT, canvas.width * MAX_BALL_SPEED_RATIO);
+    b.vx = Math.cos(angle) * newSpeed * direction;
+    b.vy = Math.sin(angle) * newSpeed;
+    b.speed = newSpeed;
+    b.x = direction === 1 ? paddle.x + paddle.w + b.r + 1 : paddle.x - b.r - 1;
+    return true;
+  }
+  return false;
+}
+
+function awardPoint(scorer) {
+  score[scorer]++;
+  sendToGuest({ type: 'point', scorer, score: { ...score } });
+  if (score[scorer] >= WINNING_SCORE) {
+    endGame(scorer);
+  } else {
+    resetBall(scorer === 'guest' ? 1 : -1);
+    guestPaddleY = 0.5;
+    myTouchY = null;
+    initPaddles();
+  }
+}
+
+function receivePoint(data) {
+  score.host = data.score.host;
+  score.guest = data.score.guest;
+  initPaddles();
+  myTouchY = null;
+}
+
+function sendStateToGuest() {
+  sendToGuest({
+    type: 'state',
+    ball: { x: ball.x / canvas.width, y: ball.y / canvas.height, r: ball.r / canvas.width },
+    hostPaddleY: (hostPaddle.y + hostPaddle.h / 2) / canvas.height,
+    guestPaddleY: (guestPaddle.y + guestPaddle.h / 2) / canvas.height,
+    score: { ...score },
+    countdown: countdownVal
+  });
+}
+
+function receiveState(data) {
+  const cw = canvas.width, ch = canvas.height;
+  ball.x = data.ball.x * cw;
+  ball.y = data.ball.y * ch;
+  ball.r = data.ball.r * cw;
+  ball.vx = 0; ball.vy = 0;
+  hostPaddle.y = data.hostPaddleY * ch - hostPaddle.h / 2;
+  guestPaddle.y = data.guestPaddleY * ch - guestPaddle.h / 2;
+  score.host = data.score.host;
+  score.guest = data.score.guest;
+  if (data.countdown > 0) countdownVal = data.countdown;
+}
+
+// ═══════════════════════════════════════════════════════
+//  GAME OVER
+// ═══════════════════════════════════════════════════════
+function endGame(winner) {
+  gameRunning = false;
+  cancelAnimationFrame(frameId);
+  sendToGuest({ type: 'gameover', winner, score: { ...score } });
+  showGameOver(winner === 'host' ? true : false);
+}
+
+function receiveGameOver(data) {
+  gameRunning = false;
+  showGameOver(data.winner === 'guest' ? true : false);
+}
+
+function showGameOver(iWon) {
+  document.getElementById('winnerEmoji').textContent = iWon ? '🏆' : '😢';
+  document.getElementById('winnerText').textContent = iWon ? 'You Win!' : 'You Lose';
+  document.getElementById('finalScore').textContent = `${score.host} – ${score.guest}`;
+  showScreen('gameOverScreen');
+}
+
+function playAgain() {
+  score.host = 0; score.guest = 0;
+  if (isHost) {
+    startGame();
+    sendToGuest({ type: 'restart', config: {} });
+  } else {
+    showToast('Waiting for host to restart…');
+    showScreen('joiningScreen');
+    document.getElementById('joiningLabel').textContent = 'Waiting for host…';
+  }
+}
+
+function goHome() {
+  if (peer) { peer.destroy(); peer = null; }
+  conn = null;
+  gameRunning = false;
+  cancelAnimationFrame(frameId);
+  setConnStatus(false, '–');
+  showScreen('lobbyScreen');
+}
+
+// ═══════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════
+function render() {
+  const cw = canvas.width, ch = canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Background
+  ctx.fillStyle = '#050510';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Starfield
+  drawStars(cw, ch);
+
+  // Center line
+  ctx.setLineDash([12, 14]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cw / 2, 0);
+  ctx.lineTo(cw / 2, ch);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Score
+  const scoreY = ch * 0.1;
+  ctx.font = `bold ${Math.min(cw * 0.08, 52)}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Host score
+  ctx.fillStyle = isHost ? 'rgba(108,99,255,0.9)' : 'rgba(255,255,255,0.5)';
+  ctx.fillText(score.host, cw * 0.28, scoreY);
+
+  // Guest score
+  ctx.fillStyle = !isHost ? 'rgba(255,101,132,0.9)' : 'rgba(255,255,255,0.5)';
+  ctx.fillText(score.guest, cw * 0.72, scoreY);
+
+  // Your side label
+  ctx.font = `${Math.min(cw * 0.025, 13)}px sans-serif`;
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  if (isHost) {
+    ctx.textAlign = 'left';
+    ctx.fillText('YOU', PADDLE_W * 2 + PADDLE_W + 12, scoreY);
+  } else {
+    ctx.textAlign = 'right';
+    ctx.fillText('YOU', cw - PADDLE_W * 2 - PADDLE_W - 12, scoreY);
+  }
+  ctx.textAlign = 'center';
+
+  // Paddles
+  drawPaddle(hostPaddle, '#6c63ff', '#9c5fff');
+  drawPaddle(guestPaddle, '#ff6584', '#ff8fa3');
+
+  // Ball
+  if (countdownVal <= 0 && ball.x !== undefined) {
+    drawBall();
+  }
+
+  // Countdown
+  if (countdownVal > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = `bold ${Math.min(cw * 0.2, 140)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(countdownVal, cw / 2, ch / 2);
+  }
+
+  // Touch hint (first few seconds)
+  if (countdownVal > 0) {
+    ctx.font = `${Math.min(cw * 0.03, 14)}px sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.textAlign = 'center';
+    const side = isHost ? cw * 0.15 : cw * 0.85;
+    ctx.fillText('Drag to move', side, ch * 0.88);
+  }
+}
+
+// Stars cache
+let stars = null;
+function drawStars(cw, ch) {
+  if (!stars || stars.length === 0) {
+    stars = Array.from({ length: 60 }, () => ({
+      x: Math.random(), y: Math.random(), r: Math.random() * 1.5, a: Math.random() * 0.4 + 0.05
+    }));
+  }
+  stars.forEach(s => {
+    ctx.beginPath();
+    ctx.arc(s.x * cw, s.y * ch, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${s.a})`;
+    ctx.fill();
+  });
+}
+
+function drawPaddle(p, color1, color2) {
+  const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+  grad.addColorStop(0, color1);
+  grad.addColorStop(1, color2);
+  ctx.fillStyle = grad;
+  const r = p.w / 2;
+  ctx.beginPath();
+  ctx.roundRect(p.x, p.y, p.w, p.h, r);
+  ctx.fill();
+  // Glow
+  ctx.shadowColor = color1;
+  ctx.shadowBlur = 18;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawBall() {
+  // Glow
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+// Polyfill roundRect
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.lineTo(x + w - r, y);
+    this.arcTo(x + w, y, x + w, y + r, r);
+    this.lineTo(x + w, y + h - r);
+    this.arcTo(x + w, y + h, x + w - r, y + h, r);
+    this.lineTo(x + r, y + h);
+    this.arcTo(x, y + h, x, y + h - r, r);
+    this.lineTo(x, y + r);
+    this.arcTo(x, y, x + r, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+//  KEYBOARD (desktop testing)
+// ═══════════════════════════════════════════════════════
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key] = true; });
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+setInterval(() => {
+  if (!gameRunning) return;
+  const ch = canvas.height;
+  if (isHost) {
+    if (keys['ArrowUp'] || keys['w']) myTouchY = Math.max(0, (myTouchY ?? 0.5) - 0.02);
+    if (keys['ArrowDown'] || keys['s']) myTouchY = Math.min(1, (myTouchY ?? 0.5) + 0.02);
+  } else {
+    if (keys['ArrowUp'] || keys['w']) { myTouchY = Math.max(0, (myTouchY ?? 0.5) - 0.02); sendPaddleToHost(); }
+    if (keys['ArrowDown'] || keys['s']) { myTouchY = Math.min(1, (myTouchY ?? 0.5) + 0.02); sendPaddleToHost(); }
+  }
+}, 16);
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+resizeCanvas();
+setConnStatus(false, '–');
+</script>
+</body>
+</html>
