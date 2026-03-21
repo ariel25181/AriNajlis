@@ -98,6 +98,20 @@
       color: rgba(255,255,255,0.5); font-size: 1.2rem; width: 40px; height: 40px;
       border-radius: 50%; cursor: pointer; z-index: 100; display:flex; align-items:center; justify-content:center;
     }
+    #tauntBtn {
+      position: fixed; bottom: 28px; z-index: 200; display: none;
+      border: none; border-radius: 14px;
+      font-size: clamp(0.75rem, 3.5vw, 1rem); font-weight: 900;
+      letter-spacing: 1px; padding: 14px 20px; cursor: pointer;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, #ff1744, #ff6d00);
+      color: white; box-shadow: 0 0 22px rgba(255,50,0,0.55);
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    #tauntBtn.host-side  { left: 18px; }
+    #tauntBtn.guest-side { right: 18px; }
+    #tauntBtn:active { transform: scale(0.92); }
+    #tauntBtn.cooling { opacity: 0.28; pointer-events: none; }
   </style>
 </head>
 <body>
@@ -105,6 +119,7 @@
 <div id="connStatus"><span class="dot" id="connDot"></span><span id="connLabel">–</span></div>
 <div id="musicLabel">🎵 –</div>
 <button id="volBtn" onclick="toggleMute()" title="Toggle music">🔊</button>
+<button id="tauntBtn" onclick="fireTaunt()">💥 TOMA PUTO</button>
 <div id="toast"></div>
 
 <!-- LOBBY -->
@@ -120,7 +135,7 @@
   <button class="btn btn-secondary" onclick="joinGame()">Join Game →</button>
   <p style="color:var(--muted);font-size:0.75rem;margin-top:24px;text-align:center;max-width:280px;">
     First to 10 points wins · Asteroids appear every 10 hits<br/>
-    Tap buttons to enable music 🎵
+    🎵 Music starts automatically on first touch
   </p>
 </div>
 
@@ -164,9 +179,9 @@ const WINNING_SCORE        = 10;
 const PADDLE_W             = 14;
 const PADDLE_H_RATIO       = 0.18;
 const BALL_RADIUS_RATIO    = 0.018;
-const INITIAL_SPEED_RATIO  = 0.013;   // faster than before
-const MAX_SPEED_RATIO      = 0.030;
-const SPEED_INCREMENT      = 1.04;
+const INITIAL_SPEED_RATIO  = 0.008;   // comfortable starting speed
+const MAX_SPEED_RATIO      = 0.032;
+const SPEED_INCREMENT      = 1.07;    // +7% per hit — ramps up fast
 const FPS_TARGET           = 60;
 const MAX_ASTEROIDS        = 3;
 const ASTEROID_HIT_SPAWN   = 10;      // new asteroid every N hits
@@ -186,6 +201,16 @@ let gameRunning = false;
 let countdownVal = 0, countdownTimer = null;
 let asteroids = [];
 let totalPaddleHits = 0;
+
+// ── Taunt state ──
+let tauntActive  = false;
+let tauntAlpha   = 0;
+let tauntSender  = '';
+let tauntPhase   = '';
+let tauntTimer   = null;
+const TAUNT_HOLD = 1400;
+const TAUNT_FADE = 300;
+const TAUNT_COOL = 6000;
 
 // ═══════════════════════════════════════════════════════
 //  CANVAS
@@ -290,13 +315,27 @@ const THEMES = [
 
 function initAudio() {
   if (audioCtx) {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    // Always try to resume — mobile browsers suspend context until gesture
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(() => {
+        if (activeNodes.length === 0) startLobbyMusic();
+      });
+    }
     return;
   }
-  audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+  audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
   masterGain = audioCtx.createGain();
   masterGain.gain.value = muted ? 0 : 0.75;
   masterGain.connect(audioCtx.destination);
+  // Start lobby music immediately once context is running
+  const tryStart = () => {
+    if (audioCtx.state === 'running') {
+      startLobbyMusic();
+    } else {
+      audioCtx.resume().then(tryStart);
+    }
+  };
+  tryStart();
 }
 
 function toggleMute() {
@@ -470,6 +509,126 @@ function scheduleNextTheme() {
   }, THEME_DURATION_MS);
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  TAUNT  — "TOMA PUTO"
+// ═══════════════════════════════════════════════════════
+function showTauntBtn() {
+  const btn = document.getElementById('tauntBtn');
+  btn.className = isHost ? 'host-side' : 'guest-side';
+  btn.style.display = 'block';
+}
+function hideTauntBtn() {
+  document.getElementById('tauntBtn').style.display = 'none';
+}
+
+function fireTaunt() {
+  if (tauntActive || !gameRunning || countdownVal > 0) return;
+  const btn = document.getElementById('tauntBtn');
+  btn.classList.add('cooling');
+  setTimeout(() => btn.classList.remove('cooling'), TAUNT_COOL);
+  // Both: host sends to guest, guest sends to host
+  const msg = { type: 'taunt', sender: isHost ? 'host' : 'guest' };
+  if (isHost) sendToGuest(msg); else sendToHost(msg);
+  activateTaunt(isHost ? 'host' : 'guest');
+}
+
+function activateTaunt(sender) {
+  tauntActive = true;
+  tauntSender = sender;
+  tauntAlpha  = 0;
+  tauntPhase  = 'in';
+
+  // Fade IN
+  const fadeInStart = performance.now();
+  const fadeIn = () => {
+    const t = (performance.now() - fadeInStart) / TAUNT_FADE;
+    tauntAlpha = Math.min(t, 1);
+    if (t < 1) { requestAnimationFrame(fadeIn); return; }
+    tauntAlpha = 1;
+    tauntPhase = 'hold';
+    // Hold, then fade out
+    tauntTimer = setTimeout(() => {
+      tauntPhase = 'out';
+      const fadeOutStart = performance.now();
+      const fadeOut = () => {
+        const t2 = (performance.now() - fadeOutStart) / TAUNT_FADE;
+        tauntAlpha = Math.max(1 - t2, 0);
+        if (t2 < 1) { requestAnimationFrame(fadeOut); return; }
+        tauntAlpha  = 0;
+        tauntActive = false;
+        tauntPhase  = '';
+      };
+      requestAnimationFrame(fadeOut);
+    }, TAUNT_HOLD);
+  };
+  requestAnimationFrame(fadeIn);
+}
+
+function drawTaunt(cw, ch) {
+  if (!tauntActive && tauntAlpha <= 0) return;
+
+  // Dark overlay
+  ctx.save();
+  ctx.globalAlpha = tauntAlpha * 0.72;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.globalAlpha = 1;
+
+  // Glowing background blob
+  const blobAlpha = tauntAlpha * 0.55;
+  const grad = ctx.createRadialGradient(cw/2, ch/2, 0, cw/2, ch/2, cw * 0.55);
+  grad.addColorStop(0, `rgba(255,30,0,${blobAlpha})`);
+  grad.addColorStop(0.5, `rgba(180,10,0,${blobAlpha * 0.6})`);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Shake offset when fully visible
+  let shakeX = 0, shakeY = 0;
+  if (tauntPhase === 'hold') {
+    shakeX = (Math.random() - 0.5) * 6 * tauntAlpha;
+    shakeY = (Math.random() - 0.5) * 4 * tauntAlpha;
+  }
+
+  // Main text
+  ctx.globalAlpha = tauntAlpha;
+  const fontSize = Math.min(cw * 0.17, 100);
+  ctx.font = `900 ${fontSize}px 'Arial Black', 'Impact', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Outline
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth   = fontSize * 0.12;
+  ctx.lineJoin    = 'round';
+  ctx.strokeText('TOMA', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
+  ctx.strokeText('PUTO', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
+
+  // Fill with gradient
+  const tg = ctx.createLinearGradient(0, ch/2 - fontSize, 0, ch/2 + fontSize);
+  tg.addColorStop(0,   '#ffffff');
+  tg.addColorStop(0.3, '#ffdd00');
+  tg.addColorStop(0.7, '#ff6600');
+  tg.addColorStop(1,   '#ff1100');
+  ctx.fillStyle = tg;
+  ctx.shadowColor = '#ff3300';
+  ctx.shadowBlur  = 40 * tauntAlpha;
+  ctx.fillText('TOMA', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
+  ctx.fillText('PUTO', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
+  ctx.shadowBlur = 0;
+
+  // Sender label
+  const senderLabel = tauntSender === (isHost ? 'host' : 'guest') ? '¡Tú!' : '¡Ellos!';
+  ctx.font         = `bold ${Math.min(cw * 0.04, 22)}px sans-serif`;
+  ctx.fillStyle    = `rgba(255,255,255,${tauntAlpha * 0.6})`;
+  ctx.shadowBlur   = 0;
+  ctx.fillText(senderLabel, cw/2 + shakeX, ch/2 + fontSize * 1.5 + shakeY);
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 // ═══════════════════════════════════════════════════════
 //  ASTEROIDS
 // ═══════════════════════════════════════════════════════
@@ -601,8 +760,6 @@ function initPeer(id, onOpen) {
 //  HOST FLOW
 // ═══════════════════════════════════════════════════════
 function createGame() {
-  initAudio();
-  startLobbyMusic();
   isHost = true; myCode = generateCode();
   document.getElementById('roomCodeDisplay').textContent = myCode;
   showScreen('waitingScreen');
@@ -628,8 +785,6 @@ function cancelHost() {
 //  GUEST FLOW
 // ═══════════════════════════════════════════════════════
 function joinGame() {
-  initAudio();
-  startLobbyMusic();
   const rawCode = document.getElementById('joinCodeInput').value.trim().toUpperCase();
   if (rawCode.length < 4) { showToast('Enter a valid code'); return; }
   isHost = false; myCode = rawCode;
@@ -664,6 +819,7 @@ function setupConn() {
       case 'point':   if (!isHost) receivePoint(data);     break;
       case 'gameover':if (!isHost) receiveGameOver(data);  break;
       case 'restart': if (!isHost) startGame(data.config); break;
+      case 'taunt':   activateTaunt(data.sender); break;
     }
   });
   conn.on('close', () => {
@@ -688,6 +844,7 @@ function startGame(config) {
   initPaddles(); resetBall(1);
   setupTouchControls();
   startGameMusic();
+  showTauntBtn();
   showScreen('gameScreen');
   if (isHost) {
     sendToGuest({ type: 'start', config: { score: { ...score } } });
@@ -730,7 +887,7 @@ function startCountdown(n) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  TOUCH CONTROLS  (drag only — no jump on tap)
+//  TOUCH CONTROLS  (drag starts ON paddle only)
 // ═══════════════════════════════════════════════════════
 function setupTouchControls() {
   canvas.removeEventListener('touchstart', onTouchStart);
@@ -739,15 +896,37 @@ function setupTouchControls() {
   canvas.addEventListener('touchstart', onTouchStart, { passive: false });
   canvas.addEventListener('touchmove',  onTouchMove,  { passive: false });
   canvas.addEventListener('touchend',   onTouchEnd,   { passive: false });
+  canvas.removeEventListener('mousedown', onMouseDown);
   canvas.removeEventListener('mousemove', onMouseMove);
+  canvas.removeEventListener('mouseup',   onMouseUp);
+  canvas.addEventListener('mousedown', onMouseDown);
   canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseup',   onMouseUp);
 }
 
-// touchstart: record that a touch began, but DON'T move paddle (no jump)
+// Returns true if the point (px, py) is within the player's own paddle
+// with a generous hit margin so it's easy to grab on mobile
+function isTouchOnMyPaddle(px, py) {
+  const myPaddle = isHost ? hostPaddle : guestPaddle;
+  if (!myPaddle || myPaddle.w === undefined) return false;
+  const margin = Math.max(myPaddle.w * 2.5, 30); // generous grab zone
+  return (
+    px >= myPaddle.x - margin &&
+    px <= myPaddle.x + myPaddle.w + margin &&
+    py >= myPaddle.y - margin &&
+    py <= myPaddle.y + myPaddle.h + margin
+  );
+}
+
 function onTouchStart(e) {
   e.preventDefault();
-  isDragging = true;
-  // Store the start touch so move is relative, but paddle stays put until drag
+  const touch = e.touches[0];
+  const px = touch.clientX, py = touch.clientY;
+  if (isTouchOnMyPaddle(px, py)) {
+    isDragging = true;
+  } else {
+    isDragging = false;
+  }
 }
 
 function onTouchMove(e) {
@@ -762,10 +941,17 @@ function onTouchEnd(e) {
   isDragging = false;
 }
 
-// Mouse: only move (no click-jump)
+// Mouse equivalents — only drag when mousedown started on the paddle
+function onMouseDown(e) {
+  if (isTouchOnMyPaddle(e.clientX, e.clientY)) isDragging = true;
+}
 function onMouseMove(e) {
+  if (!isDragging) return;
   myTouchY = e.clientY / canvas.height;
   if (!isHost) sendPaddleToHost();
+}
+function onMouseUp(e) {
+  isDragging = false;
 }
 
 function sendPaddleToHost() {
@@ -783,9 +969,9 @@ function gameLoop(timestamp) {
   if (!gameRunning) return;
   const dt = Math.min((timestamp - lastTime) / (1000 / FPS_TARGET), 3);
   lastTime  = timestamp;
-  if (isHost && countdownVal <= 0) updateGame(dt);
+  if (isHost && countdownVal <= 0 && !tauntActive) updateGame(dt);
   render();
-  if (isHost && countdownVal <= 0) sendStateToGuest();
+  if (isHost && countdownVal <= 0 && !tauntActive) sendStateToGuest();
   frameId = requestAnimationFrame(gameLoop);
 }
 
@@ -904,6 +1090,7 @@ function receiveState(data) {
 //  GAME OVER
 // ═══════════════════════════════════════════════════════
 function endGame(winner) {
+  hideTauntBtn();
   gameRunning = false; cancelAnimationFrame(frameId);
   sendToGuest({ type: 'gameover', winner, score: { ...score } });
   stopAllAudio(); startLobbyMusic();
@@ -911,6 +1098,7 @@ function endGame(winner) {
 }
 
 function receiveGameOver(data) {
+  hideTauntBtn();
   gameRunning = false;
   stopAllAudio(); startLobbyMusic();
   showGameOver(data.winner === 'guest');
@@ -929,6 +1117,7 @@ function playAgain() {
 }
 
 function goHome() {
+  hideTauntBtn();
   if (peer) { peer.destroy(); peer = null; }
   conn = null; gameRunning = false; cancelAnimationFrame(frameId);
   setConnStatus(false, '–'); stopAllAudio(); startLobbyMusic();
@@ -1020,8 +1209,11 @@ function render() {
     ctx.font = `${Math.min(cw * 0.032, 15)}px sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     const side = isHost ? cw * 0.15 : cw * 0.85;
-    ctx.fillText('← drag to move', side, ch * 0.88);
+    ctx.fillText('← drag the paddle', side, ch * 0.88);
   }
+
+  // Taunt overlay (always on top)
+  drawTaunt(cw, ch);
 }
 
 function drawStars(cw, ch) {
@@ -1105,10 +1297,25 @@ setInterval(() => {
 }, 16);
 
 // ═══════════════════════════════════════════════════════
-//  INIT
+//  INIT — unlock audio on very first user interaction
 // ═══════════════════════════════════════════════════════
 resizeCanvas();
 setConnStatus(false, '–');
+
+// Browsers block audio until a user gesture. We listen on the whole
+// document for the first touch OR click, then create + start the context.
+let audioUnlocked = false;
+function unlockAudioOnce() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  document.removeEventListener('touchstart', unlockAudioOnce, true);
+  document.removeEventListener('mousedown',  unlockAudioOnce, true);
+  document.removeEventListener('keydown',    unlockAudioOnce, true);
+  initAudio(); // creates context and calls startLobbyMusic() once running
+}
+document.addEventListener('touchstart', unlockAudioOnce, true);
+document.addEventListener('mousedown',  unlockAudioOnce, true);
+document.addEventListener('keydown',    unlockAudioOnce, true);
 </script>
 </body>
 </html>
