@@ -116,6 +116,21 @@
     #tauntBtn.guest-side { right: 18px; }
     #tauntBtn:active { transform: scale(0.92); }
     #tauntBtn.cooling { opacity: 0.28; pointer-events: none; }
+    #musicBtn {
+      position: fixed; bottom: 90px; z-index: 200; display: none;
+      border: none; border-radius: 50%;
+      width: 48px; height: 48px; cursor: pointer;
+      background: rgba(255,255,255,0.1);
+      border: 1.5px solid rgba(255,255,255,0.25);
+      color: white; font-size: 1.3rem;
+      box-shadow: 0 0 14px rgba(108,99,255,0.4);
+      transition: transform 0.1s, background 0.2s;
+      display: none; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #musicBtn.host-side  { left: 18px; }
+    #musicBtn.guest-side { right: 18px; }
+    #musicBtn:active { transform: scale(0.88); background: rgba(255,255,255,0.25); }
     #musicPrompt {
       position: fixed; bottom: 0; left: 0; right: 0;
       background: linear-gradient(135deg, rgba(108,99,255,0.95), rgba(60,30,120,0.97));
@@ -134,7 +149,8 @@
 <div id="connStatus"><span class="dot" id="connDot"></span><span id="connLabel">–</span></div>
 <div id="musicLabel">🎵 –</div>
 <button id="volBtn" onclick="toggleMute()" title="Toggle music">🔊</button>
-<button id="tauntBtn" onclick="fireTaunt()">💥 TOMA PUTO</button>
+<button id="tauntBtn" onclick="fireTaunt()">😤 In your face!</button>
+<button id="musicBtn" onclick="toggleGameMusic()" title="Play/Stop music">🎵</button>
 <div id="toast"></div>
 <div id="musicPrompt" onclick="tapToStartMusic()" style="display:none">
   <span>🎵</span>Tap here to enable music
@@ -144,6 +160,18 @@
 <div class="screen active" id="lobbyScreen">
   <div class="logo">🌌 COSMIC PONG</div>
   <div class="tagline">Real-time · Peer to Peer · Space Edition</div>
+  <!-- Resume room banner (shown when a room is still alive) -->
+  <div id="resumeBanner" style="display:none;width:100%;max-width:320px;margin-bottom:16px;
+    background:rgba(0,230,118,0.08);border:1.5px solid rgba(0,230,118,0.3);border-radius:16px;
+    padding:14px 18px;text-align:center;">
+    <div style="font-size:0.75rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Room still open</div>
+    <div style="font-size:2rem;font-weight:900;letter-spacing:8px;color:#00e676;cursor:pointer"
+         onclick="resumeWaiting()" id="resumeCodeDisplay">??????</div>
+    <div style="font-size:0.75rem;color:var(--muted);margin-top:6px;">
+      Expires in <span id="resumeCountdown" style="color:#00e676;font-weight:700">2:00</span>
+      · <span style="text-decoration:underline;cursor:pointer" onclick="destroyRoom()">close room</span>
+    </div>
+  </div>
   <button class="btn btn-primary" onclick="createGame()">Create Game</button>
   <div class="divider">or</div>
   <div class="input-group">
@@ -151,9 +179,9 @@
            oninput="this.value=this.value.toUpperCase()" />
   </div>
   <button class="btn btn-secondary" onclick="joinGame()">Join Game →</button>
-  <p style="color:var(--muted);font-size:0.75rem;margin-top:24px;text-align:center;max-width:280px;">
-    First to 10 points wins · Asteroids appear every 10 hits<br/>
-    🎵 Music starts automatically on first touch
+  <button class="btn btn-secondary" style="max-width:320px;margin-top:8px;opacity:0.7" onclick="toggleLobbyMusic()" id="lobbyMusicBtn">🎵 Stop Music</button>
+  <p style="color:var(--muted);font-size:0.75rem;margin-top:16px;text-align:center;max-width:280px;">
+    First to 10 points wins · Asteroids appear every 10 hits
   </p>
 </div>
 
@@ -163,7 +191,8 @@
   <div class="room-code" id="roomCodeDisplay" onclick="copyCode()" title="Tap to copy">??????</div>
   <p style="font-size:0.8rem;color:var(--muted);margin-bottom:24px;">Tap code to copy · Share with your opponent</p>
   <div class="waiting-text"><span class="pulse-dot"></span>Waiting for opponent…</div>
-  <div style="height:32px"></div>
+  <div style="height:24px"></div>
+  <button class="btn btn-secondary" style="max-width:220px;margin-bottom:10px" onclick="toggleLobbyMusic()" id="waitMusicBtn">🎵 Stop Music</button>
   <button class="btn btn-secondary" style="max-width:220px" onclick="cancelHost()">Cancel</button>
 </div>
 
@@ -171,7 +200,8 @@
 <div class="screen" id="joiningScreen">
   <div style="font-size:2rem;margin-bottom:16px;">🔗</div>
   <div class="waiting-text" style="margin-bottom:8px;"><span class="pulse-dot"></span>Connecting to game…</div>
-  <p style="color:var(--muted);font-size:0.85rem;margin-bottom:32px;" id="joiningLabel">Room: ??????</p>
+  <p style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;" id="joiningLabel">Room: ??????</p>
+  <button class="btn btn-secondary" style="max-width:220px;margin-bottom:10px" onclick="toggleLobbyMusic()" id="joinMusicBtn">🎵 Stop Music</button>
   <button class="btn btn-secondary" style="max-width:220px" onclick="cancelJoin()">Cancel</button>
 </div>
 
@@ -219,6 +249,11 @@ let gameRunning = false;
 let countdownVal = 0, countdownTimer = null;
 let asteroids = [];
 let totalPaddleHits = 0;
+
+// ── Room persistence ──
+let roomExpireTimer   = null;  // setTimeout that destroys room after 2min
+let roomCountdownInt  = null;  // setInterval that updates the UI countdown
+let roomSecondsLeft   = 0;     // seconds remaining
 
 // ── Taunt state ──
 let tauntActive  = false;
@@ -332,30 +367,34 @@ const THEMES = [
 ];
 
 function initAudio(onReady) {
-  // Step 1: create context synchronously (required by iOS Safari)
   if (!audioCtx) {
     audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
     masterGain = audioCtx.createGain();
     masterGain.gain.value = muted ? 0 : 0.75;
     masterGain.connect(audioCtx.destination);
+
+    // statechange fires when Android finally allows audio to run.
+    // This is the most reliable trigger — works even if resume() was
+    // called slightly outside the gesture window.
+    audioCtx.addEventListener('statechange', () => {
+      if (audioCtx.state === 'running') {
+        hideMusicPrompt();
+        if (activeNodes.length === 0 && !muted) {
+          if (onReady) onReady();
+          else startLobbyMusic();
+        }
+      }
+    });
   }
 
-  const ready = () => {
-    hideMusicPrompt();
-    if (onReady) { onReady(); return; }
-    // Default: start lobby music if nothing is playing
-    if (activeNodes.length === 0 && !muted) startLobbyMusic();
-  };
-
-  // Step 2: resume — on Android the Promise must resolve before scheduling notes
+  // Call resume() synchronously — this is what unlocks iOS Safari.
+  // On Android, the actual start happens via statechange above.
   if (audioCtx.state === 'running') {
-    ready();
+    hideMusicPrompt();
+    if (onReady) onReady();
+    else if (activeNodes.length === 0 && !muted) startLobbyMusic();
   } else {
-    // Call resume() synchronously (unlocks iOS), then wait for Promise (needed for Android)
-    audioCtx.resume().then(ready).catch(() => {
-      // Fallback: try again after a short delay
-      setTimeout(() => { audioCtx.resume().then(ready); }, 200);
-    });
+    audioCtx.resume(); // synchronous call — no .then() needed here
   }
 }
 
@@ -374,6 +413,11 @@ function toggleMute() {
 
   muted = !muted;
   document.getElementById('volBtn').textContent = muted ? '🔇' : '🔊';
+  updateMusicBtnIcon();
+  const lobbyLabel = muted ? '🔇 Play Music' : '🎵 Stop Music';
+  ['lobbyMusicBtn','waitMusicBtn','joinMusicBtn'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = lobbyLabel;
+  });
 
   if (audioCtx.state === 'suspended') {
     audioCtx.resume().then(() => applyMuteGain());
@@ -560,15 +604,77 @@ function scheduleNextTheme() {
 
 
 // ═══════════════════════════════════════════════════════
-//  TAUNT  — "TOMA PUTO"
+//  TAUNT  — "IN YOUR FACE!"
 // ═══════════════════════════════════════════════════════
 function showTauntBtn() {
   const btn = document.getElementById('tauntBtn');
   btn.className = isHost ? 'host-side' : 'guest-side';
   btn.style.display = 'block';
+  const mb = document.getElementById('musicBtn');
+  mb.className = isHost ? 'host-side' : 'guest-side';
+  mb.style.display = 'flex';
+  updateMusicBtnIcon();
 }
 function hideTauntBtn() {
   document.getElementById('tauntBtn').style.display = 'none';
+  document.getElementById('musicBtn').style.display = 'none';
+}
+
+function toggleLobbyMusic() {
+  if (!audioCtx) { initAudio(); return; }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  muted = !muted;
+  const label = muted ? '🔇 Play Music' : '🎵 Stop Music';
+  // Update all lobby music buttons
+  ['lobbyMusicBtn','waitMusicBtn','joinMusicBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = label;
+  });
+  const volBtn = document.getElementById('volBtn');
+  if (volBtn) volBtn.textContent = muted ? '🔇' : '🔊';
+  if (masterGain) {
+    const now = audioCtx.currentTime;
+    masterGain.gain.cancelScheduledValues(now);
+    masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.75, now + 0.4);
+  }
+  if (!muted && activeNodes.length === 0) startLobbyMusic();
+  showToast(muted ? '🔇 Music off' : '🎵 Music on');
+}
+
+function updateMusicBtnIcon() {
+  const mb = document.getElementById('musicBtn');
+  if (!mb) return;
+  mb.textContent = muted ? '🔇' : '🎵';
+  mb.title = muted ? 'Enable music' : 'Stop music';
+  mb.style.opacity = muted ? '0.5' : '1';
+}
+
+function toggleGameMusic() {
+  if (!audioCtx) { initAudio(); return; }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  muted = !muted;
+  // Also sync the main vol button
+  const volBtn = document.getElementById('volBtn');
+  if (volBtn) volBtn.textContent = muted ? '🔇' : '🔊';
+  if (muted) {
+    if (masterGain) {
+      const now = audioCtx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.linearRampToValueAtTime(0, now + 0.4);
+    }
+  } else {
+    if (masterGain) {
+      const now = audioCtx.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.linearRampToValueAtTime(0.75, now + 0.4);
+    }
+    if (activeNodes.length === 0) {
+      if (gameRunning) startGameMusic();
+      else startLobbyMusic();
+    }
+  }
+  updateMusicBtnIcon();
+  showToast(muted ? '🔇 Music off' : '🎵 Music on');
 }
 
 function fireTaunt() {
@@ -651,8 +757,8 @@ function drawTaunt(cw, ch) {
   ctx.strokeStyle = '#000';
   ctx.lineWidth   = fontSize * 0.12;
   ctx.lineJoin    = 'round';
-  ctx.strokeText('TOMA', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
-  ctx.strokeText('PUTO', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
+  ctx.strokeText('IN YOUR', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
+  ctx.strokeText('FACE! 😤', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
 
   // Fill with gradient
   const tg = ctx.createLinearGradient(0, ch/2 - fontSize, 0, ch/2 + fontSize);
@@ -663,8 +769,8 @@ function drawTaunt(cw, ch) {
   ctx.fillStyle = tg;
   ctx.shadowColor = '#ff3300';
   ctx.shadowBlur  = 40 * tauntAlpha;
-  ctx.fillText('TOMA', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
-  ctx.fillText('PUTO', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
+  ctx.fillText('IN YOUR', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
+  ctx.fillText('FACE! 😤', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
   ctx.shadowBlur = 0;
 
   // Sender label
@@ -679,10 +785,64 @@ function drawTaunt(cw, ch) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  ROOM PERSISTENCE
+// ═══════════════════════════════════════════════════════
+const ROOM_TTL = 120; // seconds
+
+function startRoomCountdown() {
+  roomSecondsLeft = ROOM_TTL;
+  clearTimeout(roomExpireTimer);
+  clearInterval(roomCountdownInt);
+
+  // Update countdown display every second
+  roomCountdownInt = setInterval(() => {
+    roomSecondsLeft--;
+    const m = Math.floor(roomSecondsLeft / 60);
+    const s = String(roomSecondsLeft % 60).padStart(2, '0');
+    const el = document.getElementById('resumeCountdown');
+    if (el) el.textContent = m + ':' + s;
+    if (roomSecondsLeft <= 0) destroyRoom();
+  }, 1000);
+
+  // Hard destroy at TTL
+  roomExpireTimer = setTimeout(destroyRoom, ROOM_TTL * 1000);
+}
+
+function showResumeBanner() {
+  const banner = document.getElementById('resumeBanner');
+  const codeEl = document.getElementById('resumeCodeDisplay');
+  if (banner && codeEl) {
+    codeEl.textContent = myCode;
+    banner.style.display = 'block';
+  }
+}
+
+function hideResumeBanner() {
+  const banner = document.getElementById('resumeBanner');
+  if (banner) banner.style.display = 'none';
+}
+
+function resumeWaiting() {
+  // Go back to waiting screen — peer is still alive
+  document.getElementById('roomCodeDisplay').textContent = myCode;
+  showScreen('waitingScreen');
+}
+
+function destroyRoom() {
+  clearTimeout(roomExpireTimer);
+  clearInterval(roomCountdownInt);
+  roomExpireTimer = roomCountdownInt = null;
+  if (peer) { peer.destroy(); peer = null; }
+  myCode = ''; isHost = false;
+  hideResumeBanner();
+  setConnStatus(false, '–');
+}
+
+// ═══════════════════════════════════════════════════════
 //  MUSIC PROMPT HELPERS
 // ═══════════════════════════════════════════════════════
 function showMusicPrompt() {
-  if (audioUnlocked) return;
+  if (audioCtx && audioCtx.state === 'running') return;
   const p = document.getElementById('musicPrompt');
   if (p) p.style.display = 'block';
 }
@@ -691,7 +851,6 @@ function hideMusicPrompt() {
   if (p) p.style.display = 'none';
 }
 function tapToStartMusic() {
-  audioUnlocked = true;
   hideMusicPrompt();
   initAudio();
 }
@@ -747,7 +906,7 @@ function checkAsteroidBallCollision(b, ast) {
     const dot = b.vx * nx + b.vy * ny;
     b.vx -= 2 * dot * nx;
     b.vy -= 2 * dot * ny;
-    const newSpd = Math.min(b.speed * SPEED_INCREMENT, canvas.width * MAX_SPEED_RATIO);
+    const newSpd = Math.max(b.speed * 0.82, canvas.width * 0.006); // slow down 18% on asteroid hit
     const cur    = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
     if (cur > 0) { b.vx = (b.vx / cur) * newSpd; b.vy = (b.vy / cur) * newSpd; }
     b.speed = newSpd;
@@ -828,6 +987,7 @@ function initPeer(id, onOpen) {
 // ═══════════════════════════════════════════════════════
 function createGame() {
   initAudio(); // ensure audio context created from this gesture
+  destroyRoom(); // close any lingering room before creating a new one
   isHost = true; myCode = generateCode();
   document.getElementById('roomCodeDisplay').textContent = myCode;
   showScreen('waitingScreen');
@@ -844,9 +1004,12 @@ function copyCode() {
 }
 
 function cancelHost() {
-  if (peer) { peer.destroy(); peer = null; }
+  // Don't destroy the peer — keep room alive for 2 minutes
   if (frameId) { cancelAnimationFrame(frameId); frameId = null; }
-  gameRunning = false; setConnStatus(false, '–'); showScreen('lobbyScreen');
+  gameRunning = false;
+  showResumeBanner();
+  startRoomCountdown();
+  showScreen('lobbyScreen');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1063,9 +1226,19 @@ function updateGame(dt) {
   ball.x += ball.vx * dt;
   ball.y += ball.vy * dt;
 
-  // Wall bounce
-  if (ball.y - ball.r <= 0)  { ball.y = ball.r;      ball.vy =  Math.abs(ball.vy); }
-  if (ball.y + ball.r >= ch) { ball.y = ch - ball.r; ball.vy = -Math.abs(ball.vy); }
+  // Wall bounce — slow down slightly and redirect more horizontal
+  if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) {
+    if (ball.y - ball.r <= 0) { ball.y = ball.r;      ball.vy =  Math.abs(ball.vy); }
+    else                       { ball.y = ch - ball.r; ball.vy = -Math.abs(ball.vy); }
+    // Reduce vertical component, redirect energy toward horizontal
+    ball.vy   *= 0.55;                         // flatten the angle
+    ball.speed *= 0.88;                        // slight slow-down on wall hit
+    ball.speed  = Math.max(ball.speed, canvas.width * 0.006); // don't go below min
+    // Recalculate vx to conserve (adjusted) speed
+    const vxSign = ball.vx >= 0 ? 1 : -1;
+    const vxMag  = Math.sqrt(Math.max(ball.speed * ball.speed - ball.vy * ball.vy, 0));
+    ball.vx = vxSign * vxMag;
+  }
 
   // Paddle collisions
   if (checkPaddleCollision(ball, hostPaddle, 1))  {
@@ -1187,9 +1360,21 @@ function playAgain() {
 
 function goHome() {
   hideTauntBtn();
-  if (peer) { peer.destroy(); peer = null; }
   conn = null; gameRunning = false; cancelAnimationFrame(frameId);
-  setConnStatus(false, '–'); stopAllAudio(); startLobbyMusic();
+  stopAllAudio(); startLobbyMusic();
+  if (isHost && peer && myCode) {
+    // Keep room open — show resume banner with countdown
+    // Re-listen for new connections in case opponent also went home
+    peer.off('connection');
+    peer.on('connection', (c) => { conn = c; setupConn(); });
+    showResumeBanner();
+    startRoomCountdown();
+    setConnStatus(false, 'Room open · ' + myCode);
+  } else {
+    if (peer) { peer.destroy(); peer = null; }
+    setConnStatus(false, '–');
+    hideResumeBanner();
+  }
   showScreen('lobbyScreen');
 }
 
@@ -1366,30 +1551,65 @@ setInterval(() => {
 }, 16);
 
 // ═══════════════════════════════════════════════════════
-//  INIT — unlock audio on very first user interaction
+//  INIT
 // ═══════════════════════════════════════════════════════
 resizeCanvas();
 setConnStatus(false, '–');
-// Show music prompt on lobby — the surest way to unlock audio on Android
-showMusicPrompt();
 
-// Browsers block audio until a user gesture. We listen on the whole
-// document for the first touch OR click, then create + start the context.
-// ── Audio unlock on first gesture ──
-let audioUnlocked = false;
-function unlockAudioOnce() {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  document.removeEventListener('touchend', unlockAudioOnce);
-  document.removeEventListener('mousedown', unlockAudioOnce);
-  document.removeEventListener('keydown', unlockAudioOnce);
-  initAudio();
+// ── Pre-create AudioContext immediately on page load ──
+// It will be 'suspended' on mobile, but creating it now means the
+// statechange listener is already attached when the gesture comes in.
+audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
+masterGain = audioCtx.createGain();
+masterGain.gain.value = muted ? 0 : 0.75;
+masterGain.connect(audioCtx.destination);
+
+// statechange: fires automatically when browser decides context can run.
+// On Android Chrome this fires the moment ANY gesture is detected on page.
+audioCtx.addEventListener('statechange', () => {
+  if (audioCtx.state === 'running' && activeNodes.length === 0 && !muted) {
+    hideMusicPrompt();
+    startLobbyMusic();
+  }
+});
+
+// Also try resume() on every possible user interaction type.
+// Using capture:true so we get it before any other handler.
+// touchstart is best for mobile — fires immediately on finger contact.
+function tryResumeAudio() {
+  if (!audioCtx || audioCtx.state === 'running') return;
+  audioCtx.resume(); // synchronous call satisfies iOS Safari gesture requirement
 }
-// Use touchend (not touchstart) — more reliable on Android Chrome as it
-// fires AFTER the browser confirms it's a real gesture, not a scroll
-document.addEventListener('touchend',  unlockAudioOnce);
-document.addEventListener('mousedown', unlockAudioOnce);
-document.addEventListener('keydown',   unlockAudioOnce);
+document.addEventListener('touchstart',  tryResumeAudio, { capture: true, passive: true });
+document.addEventListener('pointerdown', tryResumeAudio, { capture: true, passive: true });
+document.addEventListener('mousedown',   tryResumeAudio, { capture: true, passive: true });
+document.addEventListener('keydown',     tryResumeAudio, { capture: true });
+
+// Show "tap anywhere" hint only if audio doesn't auto-start within 800ms
+setTimeout(() => {
+  if (audioCtx && audioCtx.state !== 'running') showMusicPrompt();
+}, 800);
+
+// ── Restore waiting screen when user returns to tab/app ──
+// If they swiped away mid-wait, coming back shows the correct screen
+function restoreScreenOnReturn() {
+  // If we're host, peer is alive and nobody connected yet — go back to waitingScreen
+  if (isHost && peer && !conn && myCode && roomSecondsLeft > 0 && !gameRunning) {
+    document.getElementById('roomCodeDisplay').textContent = myCode;
+    showScreen('waitingScreen');
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') restoreScreenOnReturn();
+});
+window.addEventListener('pageshow', (e) => {
+  // pageshow fires on back-navigation (bfcache restore)
+  restoreScreenOnReturn();
+});
+// Also handle Android back button / history pop
+window.addEventListener('popstate', () => {
+  restoreScreenOnReturn();
+});
 </script>
 </body>
 </html>
