@@ -131,6 +131,36 @@
     #musicBtn.host-side  { left: 18px; }
     #musicBtn.guest-side { right: 18px; }
     #musicBtn:active { transform: scale(0.88); background: rgba(255,255,255,0.25); }
+    /* ── PLAYER AUTH SCREENS ── */
+    .auth-box {
+      width:100%;max-width:340px;background:var(--surface);
+      border:1.5px solid var(--border);border-radius:20px;padding:28px 24px;
+      margin-bottom:16px;
+    }
+    .auth-box h3 { font-size:1rem;font-weight:700;margin-bottom:14px;color:var(--text);letter-spacing:1px;text-transform:uppercase; }
+    .auth-input {
+      width:100%;padding:13px 16px;background:var(--bg);
+      border:1.5px solid var(--border);border-radius:12px;
+      color:var(--text);font-size:1rem;outline:none;margin-bottom:10px;
+      transition:border-color .2s;
+    }
+    .auth-input:focus { border-color:var(--accent); }
+    .hof-row {
+      display:grid;grid-template-columns:1fr 90px 60px 60px;
+      gap:6px;padding:10px 12px;border-radius:10px;
+      font-size:0.78rem;align-items:center;
+    }
+    .hof-row.header { background:rgba(108,99,255,0.12);color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:1px; }
+    .hof-row.entry  { background:rgba(255,255,255,0.03);color:var(--text); }
+    .hof-row.entry:nth-child(odd) { background:rgba(255,255,255,0.06); }
+    .hof-name { font-weight:700;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .hof-scroll { max-height:260px;overflow-y:auto;width:100%;max-width:340px; }
+    .hof-date { color:var(--muted);font-size:0.7rem; }
+    .tab-bar { display:flex;gap:8px;margin-bottom:20px;width:100%;max-width:340px; }
+    .tab-btn { flex:1;padding:10px;border:1.5px solid var(--border);border-radius:12px;
+      background:var(--surface);color:var(--muted);font-size:0.85rem;font-weight:700;
+      cursor:pointer;transition:all .2s;text-align:center; }
+    .tab-btn.active { background:var(--accent);color:white;border-color:var(--accent); }
     #musicPrompt {
       position: fixed; bottom: 0; left: 0; right: 0;
       background: linear-gradient(135deg, rgba(108,99,255,0.95), rgba(60,30,120,0.97));
@@ -149,18 +179,63 @@
 <div id="connStatus"><span class="dot" id="connDot"></span><span id="connLabel">–</span></div>
 <div id="musicLabel">🎵 –</div>
 <button id="volBtn" onclick="toggleMute()" title="Toggle music">🔊</button>
-<button id="tauntBtn" onclick="fireTaunt()">😤 In your face!</button>
 <button id="musicBtn" onclick="toggleGameMusic()" title="Play/Stop music">🎵</button>
+<button id="voiceBtn" title="Hold to talk">🎙️</button>
+<div id="opponentSpeakDot"></div>
+<div id="streakBanner">🔥 ON FIRE! Opponent shrunk!</div>
 <div id="toast"></div>
 <div id="musicPrompt" onclick="tapToStartMusic()" style="display:none">
   <span>🎵</span>Tap here to enable music
 </div>
 
-<!-- LOBBY -->
-<div class="screen active" id="lobbyScreen">
+<!-- PLAYER AUTH SCREEN -->
+<div class="screen active" id="playerScreen">
   <div class="logo">🌌 COSMIC PONG</div>
   <div class="tagline">Real-time · Peer to Peer · Space Edition</div>
-  <!-- Resume room banner (shown when a room is still alive) -->
+  <div class="tab-bar">
+    <div class="tab-btn active" id="tabNew" onclick="switchTab('new')">New Player</div>
+    <div class="tab-btn" id="tabLogin" onclick="switchTab('login')">Login</div>
+    <div class="tab-btn" id="tabHof" onclick="switchTab('hof')">🏆 Hall of Fame</div>
+    <div class="tab-btn" id="tabHistory" onclick="switchTab('history')">📜 History</div>
+  </div>
+
+  <!-- New Player -->
+  <div id="tabContentNew">
+    <div class="auth-box">
+      <h3>Create Player</h3>
+      <input class="auth-input" id="newPlayerName" placeholder="Your name…" maxlength="20" />
+      <button class="btn btn-primary" style="margin-bottom:0" onclick="createPlayer()">Create &amp; Play →</button>
+    </div>
+  </div>
+
+  <!-- Login -->
+  <div id="tabContentLogin" style="display:none">
+    <div class="auth-box">
+      <h3>Login</h3>
+      <input class="auth-input" id="loginPlayerName" placeholder="Your name…" maxlength="20" />
+      <button class="btn btn-primary" style="margin-bottom:0" onclick="loginPlayer()">Login &amp; Play →</button>
+    </div>
+  </div>
+
+  <!-- Hall of Fame -->
+  <div id="tabContentHof" style="display:none;width:100%;max-width:340px">
+    <div class="hof-scroll" id="hofList">
+      <div style="color:var(--muted);font-size:0.85rem;padding:20px;text-align:center">Loading…</div>
+    </div>
+  </div>
+  <!-- Match History -->
+  <div id="tabContentHistory" style="display:none;width:100%;max-width:340px">
+    <div class="hof-scroll" id="historyList">
+      <div style="color:var(--muted);font-size:0.85rem;padding:20px;text-align:center">Login to see your history</div>
+    </div>
+  </div>
+</div>
+
+<!-- LOBBY (shown after player is identified) -->
+<div class="screen" id="lobbyScreen">
+  <div class="logo" style="font-size:clamp(1.4rem,6vw,2.5rem)">🌌 COSMIC PONG</div>
+  <div id="playerGreeting" style="color:var(--green);font-size:0.9rem;font-weight:700;margin-bottom:20px;letter-spacing:1px"></div>
+  <!-- Resume room banner -->
   <div id="resumeBanner" style="display:none;width:100%;max-width:320px;margin-bottom:16px;
     background:rgba(0,230,118,0.08);border:1.5px solid rgba(0,230,118,0.3);border-radius:16px;
     padding:14px 18px;text-align:center;">
@@ -180,8 +255,9 @@
   </div>
   <button class="btn btn-secondary" onclick="joinGame()">Join Game →</button>
   <button class="btn btn-secondary" style="max-width:320px;margin-top:8px;opacity:0.7" onclick="toggleLobbyMusic()" id="lobbyMusicBtn">🎵 Stop Music</button>
-  <p style="color:var(--muted);font-size:0.75rem;margin-top:16px;text-align:center;max-width:280px;">
-    First to 10 points wins · Asteroids appear every 10 hits
+  <button class="btn btn-secondary" style="max-width:320px;margin-top:4px;opacity:0.6;font-size:0.85rem" onclick="switchPlayerScreen()">← Switch Player</button>
+  <p style="color:var(--muted);font-size:0.75rem;margin-top:12px;text-align:center;max-width:280px;">
+    First to 10 points wins · Asteroids every 10 hits
   </p>
 </div>
 
@@ -215,7 +291,8 @@
   <div class="winner-emoji" id="winnerEmoji">🏆</div>
   <div class="winner-text" id="winnerText">You Win!</div>
   <div class="final-score" id="finalScore">10 – 5</div>
-  <button class="btn btn-primary" onclick="playAgain()">Play Again</button>
+  <div id="rematchStatus" style="color:var(--muted);font-size:0.85rem;min-height:22px;margin-bottom:4px;"></div>
+  <button class="btn btn-primary" id="rematchBtn" onclick="requestRematch()">🔄 Rematch</button>
   <button class="btn btn-secondary" onclick="goHome()">Home</button>
 </div>
 
@@ -228,16 +305,20 @@ const PADDLE_W             = 14;
 const PADDLE_H_RATIO       = 0.144;   // -20% from 0.18
 const BALL_RADIUS_RATIO    = 0.018;
 const INITIAL_SPEED_RATIO  = 0.008;
-const MAX_SPEED_RATIO      = 0.034;
-const SPEED_INCREMENT      = 1.09;    // +9% per paddle hit
+const MAX_SPEED_RATIO      = 0.038;
+const SPEED_INCREMENT      = 1.13;    // +13% per paddle hit — ramps fast
 const FPS_TARGET           = 60;
 const MAX_ASTEROIDS        = 3;
 const ASTEROID_HIT_SPAWN   = 10;      // asteroid every 10 hits
 const BOX_HIT_SPAWN        = 5;       // surprise box at hit 5,15,25… (halfway)
 const THEME_DURATION_MS    = 60000;
 const BOX_DURATION         = 30000;   // 30s power-up duration
-const BOX_SHOTS            = 10;      // shots granted by type-B box
+// Type-B box: unlimited shots for 30s — no count limit
 const FRAGMENT_LIFE        = 5000;    // ms fragments survive
+const STREAK_NEEDED        = 3;       // consecutive points for streak bonus
+const SHRINK_DURATION      = 8000;    // ms opponent paddle stays shrunk after streak
+const SHAKE_DURATION       = 350;     // ms screen shake on goal
+const TRAIL_LENGTH         = 18;      // ball trail frames
 
 // ═══════════════════════════════════════════════════════
 //  STATE
@@ -257,11 +338,19 @@ let surpriseBoxes = [];   // power-up boxes
 let shots = [];           // projectiles fired by players
 let totalPaddleHits = 0;
 
+// ── Network throttle ──
+let netFrameCount  = 0;   // count frames since last send
+const NET_SEND_EVERY = 2; // send state every N frames (~30fps over network)
+let lastAsteroidCount = -1; // track when to re-send pts
+let lastBoxCount      = -1;
+// Ball dead-reckoning on guest side
+let ballInterp = { x: 0, y: 0, vx: 0, vy: 0 }; // last received velocity
+
 // ── Power-up state ──
 // host/guest each have independent power-up tracking
 const powerUp = {
-  host:  { type: null, endsAt: 0, shotsLeft: 0 },
-  guest: { type: null, endsAt: 0, shotsLeft: 0 }
+  host:  { type: null, endsAt: 0 },
+  guest: { type: null, endsAt: 0 }
 };
 // Titillation phase for animated paddle glow
 let titillateT = 0;
@@ -270,6 +359,30 @@ let titillateT = 0;
 let roomExpireTimer   = null;  // setTimeout that destroys room after 2min
 let roomCountdownInt  = null;  // setInterval that updates the UI countdown
 let roomSecondsLeft   = 0;     // seconds remaining
+
+// ── Streak ──
+const streak = { host: 0, guest: 0 };
+
+// ── Screen shake ──
+let shakeTime = 0, shakeIntensity = 0;
+
+// ── Ball trail ──
+const ballTrail = []; // {x,y,alpha}
+
+// ── Particles ──
+let particles = []; // goal explosion
+
+// ── Voice chat ──
+let localStream   = null;
+let voiceCall     = null;
+let voiceMuted    = false;
+let opponentSpeaking = false; // analyser-based indicator
+
+// ── Rematch ──
+let rematchPending = false; // host requested rematch, waiting for guest
+
+// ── Shrink curse ──
+const shrinkTimer = { host: null, guest: null };
 
 // ── Taunt state ──
 let tauntActive  = false;
@@ -634,6 +747,7 @@ function showTauntBtn() {
 function hideTauntBtn() {
   document.getElementById('tauntBtn').style.display = 'none';
   document.getElementById('musicBtn').style.display = 'none';
+  hideVoiceBtn();
 }
 
 function toggleLobbyMusic() {
@@ -801,6 +915,109 @@ function drawTaunt(cw, ch) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  PLAYER SYSTEM
+// ═══════════════════════════════════════════════════════
+let currentPlayer = null;  // { name, createdAt, won, lost }
+let opponentName  = '???'; // received from opponent at game start
+
+function switchTab(tab) {
+  ['new','login','hof','history'].forEach(t => {
+    const el = document.getElementById('tabContent' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (el) el.style.display = t === tab ? '' : 'none';
+    const btn = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+  if (tab === 'hof') loadHof();
+  if (tab === 'history') loadHistory();
+}
+
+async function loadHof() {
+  const el = document.getElementById('hofList');
+  el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Loading…</div>';
+  try {
+    const res = await window.storage.list('player:', true);
+    const keys = res && res.keys ? res.keys : [];
+    if (!keys.length) {
+      el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No players yet. Be the first!</div>';
+      return;
+    }
+    const players = [];
+    for (const k of keys) {
+      try {
+        const r = await window.storage.get(k, true);
+        if (r) players.push(JSON.parse(r.value));
+      } catch(e) {}
+    }
+    // Sort by wins desc
+    players.sort((a,b) => (b.won||0) - (a.won||0));
+    let html = '<div class="hof-row header"><span>Player</span><span>Created</span><span style="text-align:center">W</span><span style="text-align:center">L</span></div>';
+    players.forEach((p, i) => {
+      const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+      const date = new Date(p.createdAt).toLocaleDateString();
+      html += `<div class="hof-row entry">
+        <span class="hof-name">${medal}${p.name}</span>
+        <span class="hof-date">${date}</span>
+        <span style="text-align:center;color:#00e676;font-weight:700">${p.won||0}</span>
+        <span style="text-align:center;color:#ff6584;font-weight:700">${p.lost||0}</span>
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Could not load.</div>';
+  }
+}
+
+async function createPlayer() {
+  const name = document.getElementById('newPlayerName').value.trim();
+  if (!name) { showToast('Enter a name!'); return; }
+  const key = 'player:' + name.toLowerCase();
+  try {
+    // Check if exists
+    let existing = null;
+    try { existing = await window.storage.get(key, true); } catch(e) {}
+    if (existing) { showToast('Name taken! Try another or Login.'); return; }
+    const player = { name, createdAt: Date.now(), won: 0, lost: 0, played: 0 };
+    await window.storage.set(key, JSON.stringify(player), true);
+    setCurrentPlayer(player);
+  } catch(e) { showToast('Storage error — playing as guest'); setCurrentPlayer({ name, createdAt: Date.now(), won:0,lost:0,played:0 }); }
+}
+
+async function loginPlayer() {
+  const name = document.getElementById('loginPlayerName').value.trim();
+  if (!name) { showToast('Enter your name!'); return; }
+  const key = 'player:' + name.toLowerCase();
+  try {
+    const res = await window.storage.get(key, true);
+    if (!res) { showToast('Player not found. Create one first!'); return; }
+    setCurrentPlayer(JSON.parse(res.value));
+  } catch(e) { showToast('Not found — create a new player!'); }
+}
+
+function setCurrentPlayer(player) {
+  currentPlayer = player;
+  const greet = document.getElementById('playerGreeting');
+  if (greet) greet.textContent = '👾 ' + player.name + '  ·  W:' + (player.won||0) + '  L:' + (player.lost||0);
+  showScreen('lobbyScreen');
+}
+
+function switchPlayerScreen() {
+  currentPlayer = null;
+  showScreen('playerScreen');
+}
+
+async function recordResult(iWon) {
+  if (!currentPlayer) return;
+  currentPlayer.played = (currentPlayer.played||0) + 1;
+  if (iWon) currentPlayer.won = (currentPlayer.won||0) + 1;
+  else       currentPlayer.lost = (currentPlayer.lost||0) + 1;
+  const key = 'player:' + currentPlayer.name.toLowerCase();
+  try { await window.storage.set(key, JSON.stringify(currentPlayer), true); } catch(e){}
+  // Refresh greeting
+  const greet = document.getElementById('playerGreeting');
+  if (greet) greet.textContent = '👾 ' + currentPlayer.name + '  ·  W:' + currentPlayer.won + '  L:' + currentPlayer.lost;
+}
+
+// ═══════════════════════════════════════════════════════
 //  ROOM PERSISTENCE
 // ═══════════════════════════════════════════════════════
 const ROOM_TTL = 120; // seconds
@@ -871,6 +1088,423 @@ function tapToStartMusic() {
   initAudio();
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  SOUND EFFECTS (Web Audio — synthesized, zero assets)
+// ═══════════════════════════════════════════════════════
+function sfx(type) {
+  if (!audioCtx || muted) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const now = audioCtx.currentTime;
+  const g = audioCtx.createGain();
+  g.connect(masterGain);
+
+  if (type === 'hit') {
+    // Sharp click
+    const o = audioCtx.createOscillator();
+    o.type = 'square'; o.frequency.value = 320;
+    o.frequency.exponentialRampToValueAtTime(160, now + 0.06);
+    o.connect(g); g.gain.setValueAtTime(0.18, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    o.start(now); o.stop(now + 0.1);
+
+  } else if (type === 'wall') {
+    const o = audioCtx.createOscillator();
+    o.type = 'sine'; o.frequency.value = 180;
+    o.connect(g); g.gain.setValueAtTime(0.1, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+    o.start(now); o.stop(now + 0.07);
+
+  } else if (type === 'goal') {
+    // Rising fanfare
+    [0, 0.12, 0.24].forEach((t, i) => {
+      const o = audioCtx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = [523, 659, 784][i];
+      o.connect(g);
+      g.gain.setValueAtTime(0, now + t);
+      g.gain.linearRampToValueAtTime(0.22, now + t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.18);
+      o.start(now + t); o.stop(now + t + 0.2);
+    });
+
+  } else if (type === 'losePt') {
+    // Descending wah
+    const o = audioCtx.createOscillator();
+    o.type = 'sawtooth'; o.frequency.value = 300;
+    o.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+    o.connect(g); g.gain.setValueAtTime(0.15, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+    o.start(now); o.stop(now + 0.35);
+
+  } else if (type === 'explosion') {
+    // Noise burst for asteroid break
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.15, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = audioCtx.createBufferSource();
+    const filt = audioCtx.createBiquadFilter();
+    filt.type = 'bandpass'; filt.frequency.value = 600; filt.Q.value = 0.5;
+    src.buffer = buf; src.connect(filt); filt.connect(g);
+    g.gain.setValueAtTime(0.35, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    src.start(now);
+
+  } else if (type === 'powerup') {
+    // Ascending sparkle
+    [0,0.08,0.16,0.24].forEach((t,i) => {
+      const o = audioCtx.createOscillator();
+      o.type = 'sine'; o.frequency.value = 400 + i*200;
+      o.connect(g); g.gain.setValueAtTime(0, now+t);
+      g.gain.linearRampToValueAtTime(0.12, now+t+0.03);
+      g.gain.exponentialRampToValueAtTime(0.001, now+t+0.1);
+      o.start(now+t); o.stop(now+t+0.12);
+    });
+
+  } else if (type === 'streak') {
+    // "WOOSH" shrink
+    const o = audioCtx.createOscillator();
+    o.type = 'sawtooth'; o.frequency.value = 800;
+    o.frequency.exponentialRampToValueAtTime(200, now + 0.4);
+    o.connect(g); g.gain.setValueAtTime(0.2, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    o.start(now); o.stop(now + 0.42);
+
+  } else if (type === 'shot') {
+    const o = audioCtx.createOscillator();
+    o.type = 'square'; o.frequency.value = 600;
+    o.frequency.exponentialRampToValueAtTime(200, now + 0.08);
+    o.connect(g); g.gain.setValueAtTime(0.1, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    o.start(now); o.stop(now + 0.1);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  HAPTIC FEEDBACK
+// ═══════════════════════════════════════════════════════
+function haptic(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
+// ═══════════════════════════════════════════════════════
+//  SCREEN SHAKE
+// ═══════════════════════════════════════════════════════
+function triggerShake(intensity) {
+  shakeTime = SHAKE_DURATION;
+  shakeIntensity = intensity;
+}
+
+function getShakeOffset() {
+  if (shakeTime <= 0) return { x: 0, y: 0 };
+  const t = shakeTime / SHAKE_DURATION;
+  return {
+    x: (Math.random() - 0.5) * shakeIntensity * t,
+    y: (Math.random() - 0.5) * shakeIntensity * t
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+//  PARTICLES (goal explosion)
+// ═══════════════════════════════════════════════════════
+function spawnGoalParticles(x, y, color) {
+  for (let i = 0; i < 28; i++) {
+    const ang = (i / 28) * Math.PI * 2 + Math.random() * 0.3;
+    const spd = 3 + Math.random() * 6;
+    particles.push({
+      x, y,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd - 2,
+      r: 2 + Math.random() * 4,
+      alpha: 1,
+      color,
+      decay: 0.025 + Math.random() * 0.02
+    });
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 0.2 * dt; // gravity
+    p.alpha -= p.decay * dt;
+    if (p.alpha <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.alpha);
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  BALL TRAIL
+// ═══════════════════════════════════════════════════════
+function updateBallTrail() {
+  if (ball.x === undefined) return;
+  ballTrail.push({ x: ball.x, y: ball.y, r: ball.r });
+  if (ballTrail.length > TRAIL_LENGTH) ballTrail.shift();
+}
+
+function drawBallTrail() {
+  for (let i = 0; i < ballTrail.length; i++) {
+    const t = ballTrail[i];
+    const alpha = (i / ballTrail.length) * 0.35;
+    const r     = t.r * (i / ballTrail.length) * 0.85;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#a0c0ff';
+    ctx.shadowColor = '#6c63ff'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.arc(t.x, t.y, Math.max(r, 1), 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  STREAK SYSTEM
+// ═══════════════════════════════════════════════════════
+function onPointScored(scorer) {
+  streak[scorer]++;
+  streak[scorer === 'host' ? 'guest' : 'host'] = 0; // reset opponent streak
+  if (streak[scorer] >= STREAK_NEEDED) {
+    streak[scorer] = 0;
+    const victim = scorer === 'host' ? 'guest' : 'host';
+    applyStreakPenalty(victim);
+    sendToGuest({ type: 'streak', victim });
+    showStreakBanner(scorer === (isHost ? 'host' : 'guest'));
+  }
+}
+
+function applyStreakPenalty(victim) {
+  const paddle = victim === 'host' ? hostPaddle : guestPaddle;
+  const orig = canvas.height * PADDLE_H_RATIO;
+  paddle.h = orig * 0.55; // shrink 45%
+  sfx('streak'); haptic([30, 20, 60]);
+  if (shrinkTimer[victim]) clearTimeout(shrinkTimer[victim]);
+  shrinkTimer[victim] = setTimeout(() => {
+    const p2 = victim === 'host' ? hostPaddle : guestPaddle;
+    p2.h = canvas.height * PADDLE_H_RATIO;
+    shrinkTimer[victim] = null;
+  }, SHRINK_DURATION);
+}
+
+function showStreakBanner(iMine) {
+  const el = document.getElementById('streakBanner');
+  el.textContent = iMine ? '🔥 STREAK! Opponent shrunk!' : '💀 Opponent on fire!';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ═══════════════════════════════════════════════════════
+//  REMATCH
+// ═══════════════════════════════════════════════════════
+function requestRematch() {
+  document.getElementById('rematchStatus').textContent = '⏳ Waiting for opponent…';
+  document.getElementById('rematchBtn').disabled = true;
+  if (isHost) {
+    rematchPending = true;
+    sendToGuest({ type: 'rematch_req' });
+  } else {
+    sendToHost({ type: 'rematch_req' });
+  }
+}
+
+function handleRematchReq() {
+  if (isHost) {
+    // Both agreed if host also requested, or just accept
+    startGame(); sendToGuest({ type: 'rematch_go' });
+  } else {
+    // Guest: either host already asked, so go; or ask host
+    sendToHost({ type: 'rematch_ack' });
+    document.getElementById('rematchStatus').textContent = '⏳ Waiting for host…';
+    document.getElementById('rematchBtn').disabled = true;
+  }
+}
+
+function handleRematchGo() {
+  startGame();
+}
+
+// ═══════════════════════════════════════════════════════
+//  VOICE CHAT
+// ═══════════════════════════════════════════════════════
+let voiceAnalyser = null;
+let voiceAnalyserData = null;
+let speakCheckInterval = null;
+
+async function initVoice() {
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: true, noiseSuppression: true, autoGainControl: true
+    }});
+    // Mute mic by default — push-to-talk model
+    localStream.getAudioTracks().forEach(t => t.enabled = false);
+    voiceMuted = true;
+    setupVoiceAnalyser(localStream);
+    showToast('🎙️ Mic ready — hold button to talk');
+  } catch(e) {
+    showToast('🎙️ Mic not available');
+    const btn = document.getElementById('voiceBtn');
+    if (btn) btn.style.display = 'none';
+  }
+}
+
+function setupVoiceAnalyser(stream) {
+  if (!audioCtx) return;
+  const src = audioCtx.createMediaStreamSource(stream);
+  voiceAnalyser = audioCtx.createAnalyser();
+  voiceAnalyser.fftSize = 256;
+  voiceAnalyserData = new Uint8Array(voiceAnalyser.frequencyBinCount);
+  src.connect(voiceAnalyser);
+}
+
+function startVoiceCall(peerId) {
+  if (!peer || !localStream) return;
+  voiceCall = peer.call(peerId, localStream);
+  voiceCall.on('stream', playRemoteStream);
+  voiceCall.on('close', () => { voiceCall = null; });
+}
+
+function answerVoiceCall(call) {
+  if (!localStream) { initVoice().then(() => call.answer(localStream)); return; }
+  call.answer(localStream);
+  call.on('stream', playRemoteStream);
+  voiceCall = call;
+}
+
+function playRemoteStream(stream) {
+  let audio = document.getElementById('remoteAudio');
+  if (!audio) {
+    audio = document.createElement('audio');
+    audio.id = 'remoteAudio'; audio.autoplay = true;
+    document.body.appendChild(audio);
+  }
+  audio.srcObject = stream;
+  // Start monitoring opponent speaking
+  startOpponentSpeakDetect(stream);
+}
+
+function startOpponentSpeakDetect(stream) {
+  if (!audioCtx) return;
+  const src2 = audioCtx.createMediaStreamSource(stream);
+  const analyser2 = audioCtx.createAnalyser();
+  analyser2.fftSize = 256;
+  const data2 = new Uint8Array(analyser2.frequencyBinCount);
+  src2.connect(analyser2);
+  if (speakCheckInterval) clearInterval(speakCheckInterval);
+  speakCheckInterval = setInterval(() => {
+    analyser2.getByteFrequencyData(data2);
+    const avg = data2.reduce((a, b) => a + b, 0) / data2.length;
+    opponentSpeaking = avg > 12;
+    const dot = document.getElementById('opponentSpeakDot');
+    if (dot) dot.style.display = opponentSpeaking ? 'block' : 'none';
+  }, 80);
+}
+
+function showVoiceBtn() {
+  const btn = document.getElementById('voiceBtn');
+  if (!btn) return;
+  btn.className = isHost ? 'host-side' : 'guest-side';
+  btn.style.display = 'flex';
+  btn.classList.add('muted');
+  // Position opponent speaking dot on opposite side
+  const dot = document.getElementById('opponentSpeakDot');
+  if (dot) {
+    dot.style.bottom = '175px';
+    dot.style[isHost ? 'right' : 'left'] = '22px';
+  }
+  // Touch events for push-to-talk
+  btn.addEventListener('touchstart', startTalking, { passive: false });
+  btn.addEventListener('touchend',   stopTalking,  { passive: false });
+  btn.addEventListener('mousedown',  startTalking);
+  btn.addEventListener('mouseup',    stopTalking);
+}
+
+function startTalking(e) {
+  e.preventDefault();
+  if (!localStream) return;
+  localStream.getAudioTracks().forEach(t => t.enabled = true);
+  voiceMuted = false;
+  document.getElementById('voiceBtn').classList.remove('muted');
+  document.getElementById('voiceBtn').classList.add('talking');
+}
+
+function stopTalking(e) {
+  if (e) e.preventDefault();
+  if (!localStream) return;
+  localStream.getAudioTracks().forEach(t => t.enabled = false);
+  voiceMuted = true;
+  document.getElementById('voiceBtn').classList.remove('talking');
+  document.getElementById('voiceBtn').classList.add('muted');
+}
+
+function hideVoiceBtn() {
+  const btn = document.getElementById('voiceBtn');
+  if (btn) btn.style.display = 'none';
+  const dot = document.getElementById('opponentSpeakDot');
+  if (dot) dot.style.display = 'none';
+  stopTalking(null);
+}
+
+// ═══════════════════════════════════════════════════════
+//  MATCH HISTORY
+// ═══════════════════════════════════════════════════════
+async function saveMatchHistory(iWon) {
+  if (!currentPlayer) return;
+  const key = 'history:' + currentPlayer.name.toLowerCase();
+  let history = [];
+  try {
+    const res = await window.storage.get(key);
+    if (res) history = JSON.parse(res.value);
+  } catch(e) {}
+  history.unshift({
+    date: Date.now(),
+    opponent: opponentName || '???',
+    myScore: isHost ? score.host : score.guest,
+    oppScore: isHost ? score.guest : score.host,
+    won: iWon
+  });
+  if (history.length > 20) history = history.slice(0, 20); // keep last 20
+  try { await window.storage.set(key, JSON.stringify(history)); } catch(e){}
+}
+
+async function loadHistory() {
+  const el = document.getElementById('historyList');
+  if (!currentPlayer) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Login to see your history</div>';
+    return;
+  }
+  el.innerHTML = '<div style="color:var(--muted);padding:16px;text-align:center">Loading…</div>';
+  try {
+    const key = 'history:' + currentPlayer.name.toLowerCase();
+    const res = await window.storage.get(key);
+    const history = res ? JSON.parse(res.value) : [];
+    if (!history.length) {
+      el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No matches yet!</div>';
+      return;
+    }
+    let html = '<div class="hof-row header" style="grid-template-columns:1fr 80px 70px"><span>Opponent</span><span>Score</span><span>Result</span></div>';
+    history.forEach(m => {
+      const d = new Date(m.date).toLocaleDateString();
+      const result = m.won ? '<span style="color:#00e676;font-weight:700">WIN</span>' : '<span style="color:#ff6584;font-weight:700">LOSS</span>';
+      html += `<div class="hof-row entry" style="grid-template-columns:1fr 80px 70px">
+        <span><span class="hof-name">${m.opponent}</span><br><span style="font-size:0.65rem;color:var(--muted)">${d}</span></span>
+        <span style="text-align:center">${m.myScore}–${m.oppScore}</span>
+        <span style="text-align:center">${result}</span>
+      </div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Could not load</div>';
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 //  ASTEROIDS
 // ═══════════════════════════════════════════════════════
@@ -922,10 +1556,9 @@ function checkAsteroidBallCollision(b, ast) {
     const dot = b.vx * nx + b.vy * ny;
     b.vx -= 2 * dot * nx;
     b.vy -= 2 * dot * ny;
-    const newSpd = Math.max(b.speed * 0.82, canvas.width * 0.006); // slow down 18% on asteroid hit
-    const cur    = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-    if (cur > 0) { b.vx = (b.vx / cur) * newSpd; b.vy = (b.vy / cur) * newSpd; }
-    b.speed = newSpd;
+    // Keep same speed — asteroid hit doesn't slow ball
+    const cur = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+    if (cur > 0) { b.vx = (b.vx / cur) * b.speed; b.vy = (b.vy / cur) * b.speed; }
     const overlap = b.r + ast.r - dist + 1;
     b.x += nx * overlap; b.y += ny * overlap;
     return true;
@@ -944,7 +1577,9 @@ function spawnSurpriseBox() {
   const y   = r * 2 + Math.random() * (ch - r * 4);
   const spd = cw * 0.003;
   const ang = Math.random() * Math.PI * 2;
-  const type = Math.random() < 0.5 ? 'A' : 'B'; // A=expand, B=shots
+  const r2 = Math.random();
+  const type = r2 < 0.33 ? 'A' : r2 < 0.66 ? 'B' : r2 < 0.83 ? 'C' : 'D';
+  // A=expand, B=shots, C=freeze ball, D=shrink opponent
   surpriseBoxes.push({
     x, y, r, type,
     vx: Math.cos(ang) * spd,
@@ -969,7 +1604,7 @@ function updateSurpriseBoxes(dt) {
     const dist = Math.sqrt(dx*dx + dy*dy);
     if (dist < ball.r + box.r) {
       // Determine which paddle last hit the ball (use ball direction)
-      const eater = ball.vx > 0 ? 'guest' : 'host';
+      const eater = ball.vx > 0 ? 'host' : 'guest'; // ball going right = host just hit it
       activatePowerUp(eater, box.type);
       // Bounce ball away
       const nx = dx/dist, ny = dy/dist;
@@ -986,13 +1621,26 @@ function activatePowerUp(who, boxType) {
   pu.type    = boxType;
   pu.endsAt  = performance.now() + BOX_DURATION;
   if (boxType === 'A') {
-    // Expand paddle 30%
     const paddle = who === 'host' ? hostPaddle : guestPaddle;
     paddle.h = canvas.height * PADDLE_H_RATIO * 1.30;
     showToast(who === (isHost?'host':'guest') ? '🔵 Paddle expanded! 30s' : '🔵 Opponent expanded!');
-  } else {
-    pu.shotsLeft = BOX_SHOTS;
-    showToast(who === (isHost?'host':'guest') ? '🔫 10 shots! 30s' : '🔫 Opponent got shots!');
+    sfx('powerup'); haptic([20,10,20,10,40]);
+  } else if (boxType === 'B') {
+    showToast(who === (isHost?'host':'guest') ? '🔫 Unlimited shots! 30s' : '🔫 Opponent got shots!');
+    sfx('powerup'); haptic([20,10,20,10,40]);
+  } else if (boxType === 'C') {
+    // Freeze ball for 2s
+    const savedVx = ball.vx, savedVy = ball.vy;
+    ball.vx = 0; ball.vy = 0;
+    showToast(who === (isHost?'host':'guest') ? '❄️ Ball frozen! 2s' : '❄️ Ball frozen!');
+    sfx('powerup');
+    setTimeout(() => { if (gameRunning) { ball.vx = savedVx; ball.vy = savedVy; } }, 2000);
+  } else if (boxType === 'D') {
+    // Shrink opponent's paddle
+    const victim2 = who === 'host' ? 'guest' : 'host';
+    applyStreakPenalty(victim2);
+    showToast(who === (isHost?'host':'guest') ? '☠️ Opponent shrunk! 8s' : '☠️ Your paddle shrunk!');
+    sendToGuest({ type: 'streak', victim: victim2 });
   }
 }
 
@@ -1006,7 +1654,8 @@ function updatePowerUps() {
         const paddle = who === 'host' ? hostPaddle : guestPaddle;
         paddle.h = canvas.height * PADDLE_H_RATIO;
       }
-      pu.type = null; pu.shotsLeft = 0;
+      pu.type = null;
+      if (who === (isHost ? 'host' : 'guest')) showToast('⏱ Power-up expired');
       if (who === (isHost ? 'host' : 'guest')) showToast('⏱ Power-up expired');
     }
   }
@@ -1018,9 +1667,8 @@ function updatePowerUps() {
 function fireShot() {
   if (!gameRunning || countdownVal > 0) return;
   const who = isHost ? 'host' : 'guest';
-  const pu  = powerUp[who];
-  if (pu.type !== 'B' || pu.shotsLeft <= 0) return;
-  pu.shotsLeft--;
+  const pu = powerUp[who];
+  if (pu.type !== 'B' || performance.now() > pu.endsAt) return;
 
   const paddle  = isHost ? hostPaddle : guestPaddle;
   const dir     = isHost ? 1 : -1;
@@ -1028,12 +1676,13 @@ function fireShot() {
   const sy      = paddle.y + paddle.h / 2;
   const speed   = canvas.width * 0.018;
   shots.push({ x: sx, y: sy, vx: dir * speed, r: canvas.width * 0.012, owner: who, alive: true });
+  sfx('shot'); haptic(25);
 
   // Tell guest
   if (isHost) sendToGuest({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
   else        sendToHost({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
 
-  if (pu.shotsLeft === 0) { pu.type = null; showToast('🔫 Out of shots!'); }
+  // shots unlimited — no depletion
 }
 
 function updateShots(dt) {
@@ -1073,7 +1722,8 @@ function updateShots(dt) {
 // ═══════════════════════════════════════════════════════
 function breakAsteroid(ast, idx) {
   asteroids.splice(idx, 1);
-  const numFrag = 4 + Math.floor(Math.random() * 3);
+  sfx('explosion'); haptic([40, 20, 40]);
+  const numFrag = 3 + Math.floor(Math.random() * 3);
   for (let f = 0; f < numFrag; f++) {
     const ang   = (f / numFrag) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
     const spd   = ast.r * 0.06 + Math.random() * ast.r * 0.04;
@@ -1093,6 +1743,7 @@ function breakAsteroid(ast, idx) {
       bornAt: performance.now()
     });
   }
+  if (isHost) sendFragmentShapes(); // send shape data once to guest
 }
 
 function updateFragments(dt) {
@@ -1114,10 +1765,9 @@ function updateFragments(dt) {
       const nx = dx/dist, ny = dy/dist;
       const dot = ball.vx*nx + ball.vy*ny;
       ball.vx -= 2*dot*nx; ball.vy -= 2*dot*ny;
-      const spd = Math.max(ball.speed * 0.9, canvas.width * 0.006);
+      // Keep same speed — fragment hit doesn't slow ball
       const cur = Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
-      if (cur > 0) { ball.vx = (ball.vx/cur)*spd; ball.vy = (ball.vy/cur)*spd; }
-      ball.speed = spd;
+      if (cur > 0) { ball.vx = (ball.vx/cur)*ball.speed; ball.vy = (ball.vy/cur)*ball.speed; }
       fragments.splice(i, 1);
     }
   }
@@ -1207,6 +1857,7 @@ function createGame() {
   initPeer('CPONG-' + myCode, () => {
     setConnStatus(false, 'Waiting for player…');
     peer.on('connection', (c) => { conn = c; setupConn(); });
+    peer.on('call', (call) => answerVoiceCall(call));
   });
 }
 
@@ -1235,7 +1886,7 @@ function joinGame() {
   document.getElementById('joiningLabel').textContent = 'Room: ' + rawCode;
   showScreen('joiningScreen'); setConnStatus(false, 'Connecting…');
   initPeer(undefined, () => {
-    conn = peer.connect('CPONG-' + rawCode, { reliable: false, serialization: 'json' });
+    conn = peer.connect('CPONG-' + rawCode, { reliable: false, serialization: 'json', ordered: false });
     setupConn();
   });
 }
@@ -1250,9 +1901,15 @@ function cancelJoin() {
 // ═══════════════════════════════════════════════════════
 function setupConn() {
   conn.on('open', () => {
-    setConnStatus(true, isHost ? 'Host' : 'Guest');
-    if (isHost) { showToast('🎮 Opponent connected!'); startGame(); }
-    else        { showToast('✅ Connected!'); }
+    setConnStatus(true, isHost ? '🎮 ' + (currentPlayer ? currentPlayer.name : 'Host') : '🎮 ' + (currentPlayer ? currentPlayer.name : 'Guest'));
+    if (isHost) {
+      showToast('🎮 Opponent connected!');
+      startGame();
+    } else {
+      showToast('✅ Connected!');
+      // Send our name to host so they can display it
+      sendToHost({ type: 'myname', name: currentPlayer ? currentPlayer.name : 'Guest' });
+    }
   });
   conn.on('data', (data) => {
     if (!data || !data.type) return;
@@ -1263,9 +1920,27 @@ function setupConn() {
       case 'point':   if (!isHost) receivePoint(data);     break;
       case 'gameover':if (!isHost) receiveGameOver(data);  break;
       case 'restart': if (!isHost) startGame(data.config); break;
+      case 'myname':
+        if (isHost) { opponentName = data.name; showToast('👾 ' + data.name + ' joined!'); }
+        break;
+      case 'streak':
+        applyStreakPenalty(data.victim);
+        showStreakBanner(data.victim === (isHost ? 'host' : 'guest'));
+        break;
+      case 'rematch_req': handleRematchReq(); break;
+      case 'rematch_ack': if (isHost) { startGame(); sendToGuest({ type:'rematch_go' }); } break;
+      case 'rematch_go':  handleRematchGo(); break;
       case 'taunt':   activateTaunt(data.sender); break;
       case 'powerup': activatePowerUp(data.eater, data.boxType); break;
-      case 'fireshot': if (isHost) fireShot(); break; // guest asked host to fire
+      case 'fireshot': if (isHost) fireShot(); break;
+      case 'fraginit':
+        if (!isHost) {
+          const cw2 = canvas.width;
+          data.shapes.forEach(s => {
+            if (fragments[s.i]) { fragments[s.i].pts = s.pts; fragments[s.i].r = s.r*cw2; }
+          });
+        }
+        break;
       case 'shot':
         // Guest receives shot info — just add for rendering (host owns physics)
         if (!isHost) {
@@ -1294,25 +1969,37 @@ function startGame(config) {
   resizeCanvas();
   score.host = 0; score.guest = 0;
   guestPaddleY = 0.5; myTouchY = null; isDragging = false;
-  asteroids = []; fragments = []; surpriseBoxes = []; shots = [];
+  asteroids = []; fragments = []; surpriseBoxes = []; shots = []; particles = [];
+  ballTrail.length = 0;
+  streak.host = 0; streak.guest = 0;
+  rematchPending = false;
+  if (isHost) opponentName = '???';
   totalPaddleHits = 0;
-  powerUp.host  = { type: null, endsAt: 0, shotsLeft: 0 };
-  powerUp.guest = { type: null, endsAt: 0, shotsLeft: 0 };
+  powerUp.host  = { type: null, endsAt: 0 };
+  powerUp.guest = { type: null, endsAt: 0 };
   gameRunning = true;
   initPaddles(); resetBall(1);
   setupTouchControls();
   startGameMusic();
   showTauntBtn();
+  showVoiceBtn();
   showScreen('gameScreen');
+  // Init voice on game start (inside user gesture context)
+  if (!localStream) initVoice().then(() => {
+    if (isHost && conn) startVoiceCall(conn.peer);
+  });
   if (isHost) {
-    sendToGuest({ type: 'start', config: { score: { ...score } } });
+    sendToGuest({ type: 'start', config: { score: { ...score }, hostName: currentPlayer ? currentPlayer.name : 'Host' } });
     startCountdown(3);
   } else {
     startCountdown(3);
   }
 }
 
-function receiveStartGame(data) { startGame(data.config); }
+function receiveStartGame(data) {
+  if (data.config && data.config.hostName) opponentName = data.config.hostName;
+  startGame(data.config);
+}
 
 function initPaddles() {
   const cw = canvas.width, ch = canvas.height, ph = ch * PADDLE_H_RATIO;
@@ -1384,7 +2071,7 @@ function onTouchStart(e) {
     isDragging = true;
     // Fire shot if power-up B is active
     const who = isHost ? 'host' : 'guest';
-    if (powerUp[who].type === 'B' && powerUp[who].shotsLeft > 0) {
+    if (powerUp[who].type === 'B' && performance.now() < powerUp[who].endsAt) {
       if (isHost) fireShot();
       else { sendToHost({ type: 'fireshot' }); }
     }
@@ -1418,9 +2105,15 @@ function onMouseUp(e) {
   isDragging = false;
 }
 
+let lastSentPaddleY = -1;
 function sendPaddleToHost() {
-  if (!isHost && conn && conn.open && myTouchY !== null)
-    sendToHost({ type: 'paddle', y: myTouchY });
+  if (!isHost && conn && conn.open && myTouchY !== null) {
+    // Only send if moved more than 0.3% of screen — avoids flooding
+    if (Math.abs(myTouchY - lastSentPaddleY) > 0.003) {
+      lastSentPaddleY = myTouchY;
+      sendToHost({ type: 'paddle', y: myTouchY });
+    }
+  }
 }
 
 function sendToHost(data)  { if (conn && conn.open) try { conn.send(data); } catch(e){} }
@@ -1431,11 +2124,30 @@ function sendToGuest(data) { if (conn && conn.open) try { conn.send(data); } cat
 // ═══════════════════════════════════════════════════════
 function gameLoop(timestamp) {
   if (!gameRunning) return;
-  const dt = Math.min((timestamp - lastTime) / (1000 / FPS_TARGET), 3);
-  lastTime  = timestamp;
-  if (isHost && countdownVal <= 0 && !tauntActive) updateGame(dt);
+  const rawDt = (timestamp - lastTime) / (1000 / FPS_TARGET);
+  lastTime = timestamp;
+  // Cap dt tightly: skip physics on very long frames (tab was hidden etc.)
+  // to avoid the ball teleporting across the screen on resume
+  const dt = rawDt > 4 ? 1 : Math.min(rawDt, 2);
+  if (isHost && countdownVal <= 0 && !tauntActive) {
+    updateGame(dt);
+  } else if (!isHost && countdownVal <= 0 && !tauntActive) {
+    // Guest: dead-reckon ball between network frames to reduce visual stutter
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    // Wall bounce prediction
+    if (ball.r > 0) {
+      if (ball.y - ball.r < 0)              { ball.y = ball.r;                ball.vy =  Math.abs(ball.vy); }
+      if (ball.y + ball.r > canvas.height)  { ball.y = canvas.height - ball.r; ball.vy = -Math.abs(ball.vy); }
+    }
+  }
   render();
-  if (isHost && countdownVal <= 0 && !tauntActive) sendStateToGuest();
+  // Throttle network: send every NET_SEND_EVERY frames
+  netFrameCount++;
+  if (isHost && countdownVal <= 0 && !tauntActive && netFrameCount >= NET_SEND_EVERY) {
+    netFrameCount = 0;
+    sendStateToGuest();
+  }
   frameId = requestAnimationFrame(gameLoop);
 }
 
@@ -1463,12 +2175,10 @@ function updateGame(dt) {
     if (ball.y - ball.r <= 0) { ball.y = ball.r;      ball.vy =  Math.abs(ball.vy); }
     else                       { ball.y = ch - ball.r; ball.vy = -Math.abs(ball.vy); }
     // Reduce vertical component, redirect energy toward horizontal
-    ball.vy   *= 0.55;                         // flatten the angle
-    ball.speed *= 0.88;                        // slight slow-down on wall hit
-    ball.speed  = Math.max(ball.speed, canvas.width * 0.006); // don't go below min
-    // Recalculate vx to conserve (adjusted) speed
+    ball.vy *= 0.5;   // flatten angle on wall bounce, keep speed
+    sfx('wall'); haptic(8);
     const vxSign = ball.vx >= 0 ? 1 : -1;
-    const vxMag  = Math.sqrt(Math.max(ball.speed * ball.speed - ball.vy * ball.vy, 0));
+    const vxMag  = Math.sqrt(Math.max(ball.speed * ball.speed - ball.vy * ball.vy, 0.0001));
     ball.vx = vxSign * vxMag;
   }
 
@@ -1497,6 +2207,15 @@ function updateGame(dt) {
   // Power-up expiry
   updatePowerUps();
 
+  // Particles
+  updateParticles(dt);
+
+  // Ball trail
+  updateBallTrail();
+
+  // Shake timer
+  if (shakeTime > 0) shakeTime -= (1000 / FPS_TARGET);
+
   // Titillation timer
   titillateT += dt * 0.18;
 
@@ -1518,6 +2237,7 @@ function checkPaddleCollision(b, paddle, dir) {
     b.vy   = Math.sin(ang) * newSpd;
     b.speed= newSpd;
     b.x    = dir === 1 ? paddle.x + paddle.w + b.r + 1 : paddle.x - b.r - 1;
+    sfx('hit'); haptic(18);
     return true;
   }
   return false;
@@ -1525,6 +2245,15 @@ function checkPaddleCollision(b, paddle, dir) {
 
 function awardPoint(scorer) {
   score[scorer]++;
+  onPointScored(scorer);
+  // Particles + shake + sfx
+  const goalX = scorer === 'host' ? canvas.width : 0;
+  const goalY = canvas.height / 2;
+  const iMyGoal = scorer === (isHost ? 'host' : 'guest');
+  spawnGoalParticles(goalX, goalY, iMyGoal ? '#00e676' : '#ff6584');
+  triggerShake(iMyGoal ? 14 : 8);
+  if (iMyGoal) { sfx('goal'); haptic([60, 30, 60]); }
+  else         { sfx('losePt'); haptic([20, 10, 80]); }
   sendToGuest({ type: 'point', scorer, score: { ...score } });
   if (score[scorer] >= WINNING_SCORE) {
     endGame(scorer);
@@ -1532,7 +2261,6 @@ function awardPoint(scorer) {
     resetBall(scorer === 'guest' ? 1 : -1);
     guestPaddleY = 0.5; myTouchY = null;
     initPaddles();
-    // Keep asteroids but don't reset them — adds persistent challenge
   }
 }
 
@@ -1544,80 +2272,120 @@ function receivePoint(data) {
 function sendStateToGuest() {
   const cw = canvas.width, ch = canvas.height;
   const now = performance.now();
+
+  // Only include pts (large data) when asteroid/box count changes
+  const astCountChanged = asteroids.length !== lastAsteroidCount;
+  const boxCountChanged = surpriseBoxes.length !== lastBoxCount;
+  if (astCountChanged) lastAsteroidCount = asteroids.length;
+  if (boxCountChanged) lastBoxCount = surpriseBoxes.length;
+
   sendToGuest({
     type: 'state',
-    ball: { x: ball.x / cw, y: ball.y / ch, r: ball.r / cw },
-    hostPaddleY:   (hostPaddle.y  + hostPaddle.h  / 2) / ch,
-    hostPaddleH:   hostPaddle.h / ch,
-    guestPaddleY:  (guestPaddle.y + guestPaddle.h / 2) / ch,
-    guestPaddleH:  guestPaddle.h / ch,
-    score: { ...score },
-    countdown: countdownVal,
-    asteroids: asteroids.map(a => ({ x: a.x/cw, y: a.y/ch, r: a.r/cw, angle: a.angle, pts: a.pts })),
-    boxes: surpriseBoxes.map(b => ({ x: b.x/cw, y: b.y/ch, r: b.r/cw, angle: b.angle, type: b.type })),
-    frags: fragments.map(f => ({ x: f.x/cw, y: f.y/ch, r: f.r/cw, angle: f.angle, pts: f.pts,
-      age: (now - f.bornAt) / FRAGMENT_LIFE })),
-    shots: shots.map(s => ({ x: s.x/cw, y: s.y/ch, r: s.r/cw, owner: s.owner })),
-    puHost:  { type: powerUp.host.type,  rem: Math.max(0, powerUp.host.endsAt  - now), shots: powerUp.host.shotsLeft },
-    puGuest: { type: powerUp.guest.type, rem: Math.max(0, powerUp.guest.endsAt - now), shots: powerUp.guest.shotsLeft }
+    // Ball: send position + velocity for dead-reckoning on guest
+    bx: ball.x / cw, by: ball.y / ch,
+    bvx: ball.vx / cw, bvy: ball.vy / ch,
+    br: ball.r / cw,
+    hpy: (hostPaddle.y  + hostPaddle.h / 2) / ch,
+    hph: hostPaddle.h / ch,
+    gpy: (guestPaddle.y + guestPaddle.h / 2) / ch,
+    gph: guestPaddle.h / ch,
+    sh: score.host, sg: score.guest,
+    cd: countdownVal,
+    // Asteroids: send pts only on count change to save bandwidth
+    ast: asteroids.map(a => ({
+      x: a.x/cw, y: a.y/ch, r: a.r/cw, a: a.angle,
+      ...(astCountChanged ? { p: a.pts } : {})
+    })),
+    // Boxes: compact
+    box: surpriseBoxes.map(b => ({
+      x: b.x/cw, y: b.y/ch, r: b.r/cw, a: b.angle, t: b.type,
+      ...(boxCountChanged ? {} : {}) // boxes are small, always send
+    })),
+    // Fragments: position + age only (pts sent separately via 'fraginit')
+    fr: fragments.map(f => ({
+      x: f.x/cw, y: f.y/ch, a: f.angle,
+      age: Math.min((now - f.bornAt) / FRAGMENT_LIFE, 1)
+    })),
+    // Shots: compact
+    sh2: shots.map(s => ({ x: s.x/cw, y: s.y/ch, o: s.owner })),
+    puH: powerUp.host.type  ? { t: powerUp.host.type,  r: Math.max(0, powerUp.host.endsAt  - now) } : null,
+    puG: powerUp.guest.type ? { t: powerUp.guest.type, r: Math.max(0, powerUp.guest.endsAt - now) } : null
+  });
+}
+
+// Send full fragment shape data separately (only once per fragment batch)
+function sendFragmentShapes() {
+  const cw = canvas.width;
+  sendToGuest({
+    type: 'fraginit',
+    shapes: fragments.map((f, i) => ({ i, pts: f.pts, r: f.r/cw }))
   });
 }
 
 function receiveState(data) {
   const cw = canvas.width, ch = canvas.height;
-  ball.x = data.ball.x * cw; ball.y = data.ball.y * ch;
-  ball.r = data.ball.r * cw; ball.vx = 0; ball.vy = 0;
-  // Sync paddle heights (power-up A changes them)
-  if (data.hostPaddleH)  hostPaddle.h  = data.hostPaddleH  * ch;
-  if (data.guestPaddleH) guestPaddle.h = data.guestPaddleH * ch;
-  hostPaddle.y  = data.hostPaddleY  * ch - hostPaddle.h  / 2;
-  guestPaddle.y = data.guestPaddleY * ch - guestPaddle.h / 2;
-  score.host = data.score.host; score.guest = data.score.guest;
-  if (data.countdown > 0) countdownVal = data.countdown;
+  const now = performance.now();
 
-  // Asteroids
-  if (data.asteroids) {
-    while (asteroids.length < data.asteroids.length)
+  // Ball — with velocity for dead-reckoning
+  if (data.bx !== undefined) {
+    ball.x = data.bx * cw; ball.y = data.by * ch; ball.r = data.br * cw;
+    ball.vx = data.bvx * cw; ball.vy = data.bvy * ch;
+  }
+
+  // Paddles
+  if (data.hph) hostPaddle.h  = data.hph * ch;
+  if (data.gph) guestPaddle.h = data.gph * ch;
+  if (data.hpy !== undefined) hostPaddle.y  = data.hpy * ch - hostPaddle.h  / 2;
+  if (data.gpy !== undefined) guestPaddle.y = data.gpy * ch - guestPaddle.h / 2;
+
+  if (data.sh !== undefined) { score.host = data.sh; score.guest = data.sg; }
+  if (data.cd > 0) countdownVal = data.cd;
+
+  // Asteroids — update in-place, only update pts if included
+  if (data.ast) {
+    while (asteroids.length < data.ast.length)
       asteroids.push({ x:0,y:0,r:0,angle:0,pts:[],vx:0,vy:0,spin:0 });
-    asteroids.length = data.asteroids.length;
-    data.asteroids.forEach((a,i) => {
+    asteroids.length = data.ast.length;
+    data.ast.forEach((a,i) => {
       asteroids[i].x = a.x*cw; asteroids[i].y = a.y*ch;
-      asteroids[i].r = a.r*cw; asteroids[i].angle = a.angle; asteroids[i].pts = a.pts;
+      asteroids[i].r = a.r*cw; asteroids[i].angle = a.a;
+      if (a.p) asteroids[i].pts = a.p;
     });
   }
   // Surprise boxes
-  if (data.boxes) {
-    while (surpriseBoxes.length < data.boxes.length)
+  if (data.box) {
+    while (surpriseBoxes.length < data.box.length)
       surpriseBoxes.push({ x:0,y:0,r:0,angle:0,type:'A',vx:0,vy:0,spin:0 });
-    surpriseBoxes.length = data.boxes.length;
-    data.boxes.forEach((b,i) => {
+    surpriseBoxes.length = data.box.length;
+    data.box.forEach((b,i) => {
       surpriseBoxes[i].x = b.x*cw; surpriseBoxes[i].y = b.y*ch;
-      surpriseBoxes[i].r = b.r*cw; surpriseBoxes[i].angle = b.angle; surpriseBoxes[i].type = b.type;
+      surpriseBoxes[i].r = b.r*cw; surpriseBoxes[i].angle = b.a; surpriseBoxes[i].type = b.t;
     });
   }
-  // Fragments
-  if (data.frags) {
-    fragments = data.frags.map(f => ({
-      x: f.x*cw, y: f.y*ch, r: f.r*cw, angle: f.angle, pts: f.pts,
-      bornAt: performance.now() - f.age * FRAGMENT_LIFE,
-      vx:0, vy:0, spin:0
-    }));
+  // Fragments — update positions in-place
+  if (data.fr) {
+    while (fragments.length < data.fr.length)
+      fragments.push({ x:0,y:0,r:(fragments[0]||{r:8}).r,angle:0,pts:[],bornAt:now,vx:0,vy:0,spin:0 });
+    fragments.length = data.fr.length;
+    data.fr.forEach((f,i) => {
+      fragments[i].x = f.x*cw; fragments[i].y = f.y*ch; fragments[i].angle = f.a;
+      fragments[i].bornAt = now - f.age * FRAGMENT_LIFE;
+    });
   }
-  // Shots (just for rendering on guest)
-  if (data.shots) {
-    shots = data.shots.map(s => ({ x: s.x*cw, y: s.y*ch, r: s.r*cw, owner: s.owner, alive: true, vx:0, vy:0 }));
+  // Shots
+  if (data.sh2) {
+    while (shots.length < data.sh2.length)
+      shots.push({ x:0,y:0,r:cw*0.012,owner:'host',alive:true,vx:0,vy:0 });
+    shots.length = data.sh2.length;
+    data.sh2.forEach((s,i) => {
+      shots[i].x = s.x*cw; shots[i].y = s.y*ch; shots[i].owner = s.o;
+    });
   }
   // Power-ups
-  if (data.puHost) {
-    powerUp.host.type = data.puHost.type;
-    powerUp.host.endsAt = performance.now() + data.puHost.rem;
-    powerUp.host.shotsLeft = data.puHost.shots;
-  }
-  if (data.puGuest) {
-    powerUp.guest.type = data.puGuest.type;
-    powerUp.guest.endsAt = performance.now() + data.puGuest.rem;
-    powerUp.guest.shotsLeft = data.puGuest.shots;
-  }
+  if (data.puH) { powerUp.host.type  = data.puH.t; powerUp.host.endsAt  = now + data.puH.r; }
+  else          { powerUp.host.type  = null; }
+  if (data.puG) { powerUp.guest.type = data.puG.t; powerUp.guest.endsAt = now + data.puG.r; }
+  else          { powerUp.guest.type = null; }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1642,6 +2410,12 @@ function showGameOver(iWon) {
   document.getElementById('winnerEmoji').textContent = iWon ? '🏆' : '🚀';
   document.getElementById('winnerText').textContent  = iWon ? 'You Win!' : 'You Lose';
   document.getElementById('finalScore').textContent  = `${score.host} – ${score.guest}`;
+  document.getElementById('rematchStatus').textContent = '';
+  document.getElementById('rematchBtn').disabled = false;
+  recordResult(iWon);
+  saveMatchHistory(iWon);
+  triggerShake(iWon ? 18 : 6);
+  if (iWon) { sfx('goal'); sfx('goal'); haptic([100,50,100,50,200]); }
   showScreen('gameOverScreen');
 }
 
@@ -1667,7 +2441,7 @@ function goHome() {
     setConnStatus(false, '–');
     hideResumeBanner();
   }
-  showScreen('lobbyScreen');
+  showScreen(currentPlayer ? 'lobbyScreen' : 'playerScreen');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1679,6 +2453,13 @@ let twinkleT = 0;
 function render() {
   const cw = canvas.width, ch = canvas.height;
   ctx.clearRect(0, 0, cw, ch);
+
+  // Screen shake
+  const sh = getShakeOffset();
+  if (sh.x !== 0 || sh.y !== 0) {
+    ctx.save();
+    ctx.translate(sh.x, sh.y);
+  }
 
   // Background
   const bgGrad = ctx.createRadialGradient(cw/2, ch/2, 0, cw/2, ch/2, Math.max(cw, ch) * 0.8);
@@ -1708,10 +2489,9 @@ function render() {
   const guestTitil = powerUp.guest.type ? Math.sin(titillateT * 18) * 4 : 0;
   const hp = {...hostPaddle,  y: hostPaddle.y  + hostTitil};
   const gp = {...guestPaddle, y: guestPaddle.y + guestTitil};
-  const hColor = powerUp.host.type  === 'A' ? ['#00e5ff','#00b0ff'] :
-                 powerUp.host.type  === 'B' ? ['#ffea00','#ff6d00'] : ['#6c63ff','#9c5fff'];
-  const gColor = powerUp.guest.type === 'A' ? ['#00e5ff','#00b0ff'] :
-                 powerUp.guest.type === 'B' ? ['#ffea00','#ff6d00'] : ['#ff6584','#ff8fa3'];
+  const puColorMap = { A:['#00e5ff','#00b0ff'], B:['#ffea00','#ff6d00'], C:['#88ccff','#4488ff'], D:['#ff2244','#ff6584'] };
+  const hColor = puColorMap[powerUp.host.type]  || ['#6c63ff','#9c5fff'];
+  const gColor = puColorMap[powerUp.guest.type] || ['#ff6584','#ff8fa3'];
   drawPaddle(hp, hColor[0], hColor[1]);
   drawPaddle(gp, gColor[0], gColor[1]);
 
@@ -1726,13 +2506,16 @@ function render() {
     const bx = who === 'host' ? paddle.x - 9 : paddle.x + paddle.w + 4;
     ctx.fillRect(bx, paddle.y + paddle.h - bh, bw, bh);
     ctx.globalAlpha = 1;
-    // Shot count
-    if (pu.type === 'B' && pu.shotsLeft > 0) {
-      ctx.font = `bold ${Math.min(cw*0.028,14)}px monospace`;
+    // Shot timer bar label
+    if (pu.type === 'B') {
+      const remSec = Math.ceil(Math.max(0, pu.endsAt - performance.now()) / 1000);
+      ctx.font = `bold ${Math.min(cw*0.03,13)}px monospace`;
       ctx.fillStyle = '#ffea00';
-      ctx.textAlign = who === 'host' ? 'right' : 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText('🔫' + pu.shotsLeft, bx + (who==='host' ? 0 : bw+2), paddle.y);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor='#ffea00'; ctx.shadowBlur=8;
+      ctx.fillText('🔫' + remSec + 's', paddle.x + paddle.w/2, paddle.y - 18);
+      ctx.shadowBlur=0;
     }
   }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1747,8 +2530,14 @@ function render() {
   const now_r = performance.now();
   fragments.forEach(f => drawFragment(f, 1 - (now_r - f.bornAt) / FRAGMENT_LIFE));
 
+  // Ball trail
+  if (countdownVal <= 0) drawBallTrail();
+
   // Ball
   if (countdownVal <= 0 && ball.x !== undefined) drawBall();
+
+  // Goal particles
+  drawParticles();
 
   // Score
   const scoreY = ch * 0.1;
@@ -1765,16 +2554,19 @@ function render() {
   ctx.fillText(score.guest, cw * 0.72, scoreY);
   ctx.shadowBlur = 0;
 
-  // YOU label
-  ctx.font = `${Math.min(cw * 0.025, 13)}px sans-serif`;
-  ctx.fillStyle = 'rgba(255,255,255,0.22)';
-  if (isHost) {
-    ctx.textAlign = 'left';
-    ctx.fillText('YOU', PADDLE_W * 3 + 10, scoreY);
-  } else {
-    ctx.textAlign = 'right';
-    ctx.fillText('YOU', cw - PADDLE_W * 3 - 10, scoreY);
-  }
+  // Player name labels under scores
+  const myName  = currentPlayer ? currentPlayer.name : (isHost ? 'Host' : 'Guest');
+  const oppName = opponentName;
+  const nameFontSize = Math.min(cw * 0.032, 15);
+  ctx.font = `bold ${nameFontSize}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 0;
+  // Host name (left side)
+  ctx.fillStyle = isHost ? 'rgba(108,99,255,0.9)' : 'rgba(255,255,255,0.35)';
+  ctx.fillText(isHost ? myName : oppName, cw * 0.28, scoreY + scoreSize * 0.72);
+  // Guest name (right side)
+  ctx.fillStyle = !isHost ? 'rgba(255,101,132,0.9)' : 'rgba(255,255,255,0.35)';
+  ctx.fillText(!isHost ? myName : oppName, cw * 0.72, scoreY + scoreSize * 0.72);
   ctx.textAlign = 'center';
 
   // HUD: asteroid + box count
@@ -1847,8 +2639,10 @@ function drawSurpriseBox(box) {
   ctx.translate(box.x, box.y);
   ctx.rotate(box.angle);
   const s = box.r * 1.5;
-  const glow = box.type === 'A' ? '#00e5ff' : '#ffea00';
-  const fill = box.type === 'A' ? '#003355' : '#332200';
+  const glowMap = { A:'#00e5ff', B:'#ffea00', C:'#88ccff', D:'#ff2244' };
+  const fillMap = { A:'#003355', B:'#332200', C:'#001133', D:'#330011' };
+  const glow = glowMap[box.type] || '#ffffff';
+  const fill = fillMap[box.type] || '#111111';
   ctx.shadowColor = glow; ctx.shadowBlur = 22;
   ctx.strokeStyle = glow; ctx.lineWidth = 2.5;
   ctx.fillStyle = fill;
@@ -1858,7 +2652,8 @@ function drawSurpriseBox(box) {
   ctx.shadowBlur = 0;
   ctx.font = `bold ${s*0.7}px sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(box.type === 'A' ? '🔵' : '🔫', 0, 1);
+  const icons = { A:'🔵', B:'🔫', C:'❄️', D:'☠️' };
+  ctx.fillText(icons[box.type] || '?', 0, 1);
   ctx.restore();
 }
 
@@ -1946,6 +2741,8 @@ setInterval(() => {
 // ═══════════════════════════════════════════════════════
 resizeCanvas();
 setConnStatus(false, '–');
+// Start on player screen
+showScreen('playerScreen');
 
 // ── Pre-create AudioContext immediately on page load ──
 // It will be 'suspended' on mobile, but creating it now means the
