@@ -225,15 +225,19 @@
 // ═══════════════════════════════════════════════════════
 const WINNING_SCORE        = 10;
 const PADDLE_W             = 14;
-const PADDLE_H_RATIO       = 0.18;
+const PADDLE_H_RATIO       = 0.144;   // -20% from 0.18
 const BALL_RADIUS_RATIO    = 0.018;
-const INITIAL_SPEED_RATIO  = 0.008;   // comfortable starting speed
-const MAX_SPEED_RATIO      = 0.032;
-const SPEED_INCREMENT      = 1.07;    // +7% per hit — ramps up fast
+const INITIAL_SPEED_RATIO  = 0.008;
+const MAX_SPEED_RATIO      = 0.034;
+const SPEED_INCREMENT      = 1.09;    // +9% per paddle hit
 const FPS_TARGET           = 60;
 const MAX_ASTEROIDS        = 3;
-const ASTEROID_HIT_SPAWN   = 10;      // new asteroid every N hits
-const THEME_DURATION_MS    = 60000;   // 60s per music theme
+const ASTEROID_HIT_SPAWN   = 10;      // asteroid every 10 hits
+const BOX_HIT_SPAWN        = 5;       // surprise box at hit 5,15,25… (halfway)
+const THEME_DURATION_MS    = 60000;
+const BOX_DURATION         = 30000;   // 30s power-up duration
+const BOX_SHOTS            = 10;      // shots granted by type-B box
+const FRAGMENT_LIFE        = 5000;    // ms fragments survive
 
 // ═══════════════════════════════════════════════════════
 //  STATE
@@ -248,7 +252,19 @@ let isDragging = false;
 let gameRunning = false;
 let countdownVal = 0, countdownTimer = null;
 let asteroids = [];
+let fragments = [];       // asteroid fragments (small, fade out)
+let surpriseBoxes = [];   // power-up boxes
+let shots = [];           // projectiles fired by players
 let totalPaddleHits = 0;
+
+// ── Power-up state ──
+// host/guest each have independent power-up tracking
+const powerUp = {
+  host:  { type: null, endsAt: 0, shotsLeft: 0 },
+  guest: { type: null, endsAt: 0, shotsLeft: 0 }
+};
+// Titillation phase for animated paddle glow
+let titillateT = 0;
 
 // ── Room persistence ──
 let roomExpireTimer   = null;  // setTimeout that destroys room after 2min
@@ -917,6 +933,196 @@ function checkAsteroidBallCollision(b, ast) {
   return false;
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  SURPRISE BOXES
+// ═══════════════════════════════════════════════════════
+function spawnSurpriseBox() {
+  const cw = canvas.width, ch = canvas.height;
+  const r   = cw * 0.038;
+  const x   = cw * 0.28 + Math.random() * cw * 0.44;
+  const y   = r * 2 + Math.random() * (ch - r * 4);
+  const spd = cw * 0.003;
+  const ang = Math.random() * Math.PI * 2;
+  const type = Math.random() < 0.5 ? 'A' : 'B'; // A=expand, B=shots
+  surpriseBoxes.push({
+    x, y, r, type,
+    vx: Math.cos(ang) * spd,
+    vy: Math.sin(ang) * spd,
+    angle: 0,
+    spin: (Math.random() - 0.5) * 0.03
+  });
+}
+
+function updateSurpriseBoxes(dt) {
+  const cw = canvas.width, ch = canvas.height;
+  for (let i = surpriseBoxes.length - 1; i >= 0; i--) {
+    const box = surpriseBoxes[i];
+    box.x += box.vx * dt; box.y += box.vy * dt; box.angle += box.spin * dt;
+    if (box.x - box.r < 0)  { box.x = box.r;      box.vx =  Math.abs(box.vx); }
+    if (box.x + box.r > cw) { box.x = cw - box.r; box.vx = -Math.abs(box.vx); }
+    if (box.y - box.r < 0)  { box.y = box.r;      box.vy =  Math.abs(box.vy); }
+    if (box.y + box.r > ch) { box.y = ch - box.r; box.vy = -Math.abs(box.vy); }
+
+    // Ball collision
+    const dx = ball.x - box.x, dy = ball.y - box.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < ball.r + box.r) {
+      // Determine which paddle last hit the ball (use ball direction)
+      const eater = ball.vx > 0 ? 'guest' : 'host';
+      activatePowerUp(eater, box.type);
+      // Bounce ball away
+      const nx = dx/dist, ny = dy/dist;
+      const dot = ball.vx*nx + ball.vy*ny;
+      ball.vx -= 2*dot*nx; ball.vy -= 2*dot*ny;
+      surpriseBoxes.splice(i, 1);
+      sendToGuest({ type: 'powerup', eater, boxType: box.type });
+    }
+  }
+}
+
+function activatePowerUp(who, boxType) {
+  const pu = powerUp[who];
+  pu.type    = boxType;
+  pu.endsAt  = performance.now() + BOX_DURATION;
+  if (boxType === 'A') {
+    // Expand paddle 30%
+    const paddle = who === 'host' ? hostPaddle : guestPaddle;
+    paddle.h = canvas.height * PADDLE_H_RATIO * 1.30;
+    showToast(who === (isHost?'host':'guest') ? '🔵 Paddle expanded! 30s' : '🔵 Opponent expanded!');
+  } else {
+    pu.shotsLeft = BOX_SHOTS;
+    showToast(who === (isHost?'host':'guest') ? '🔫 10 shots! 30s' : '🔫 Opponent got shots!');
+  }
+}
+
+function updatePowerUps() {
+  const now = performance.now();
+  for (const who of ['host','guest']) {
+    const pu = powerUp[who];
+    if (pu.type && now >= pu.endsAt) {
+      // Expire
+      if (pu.type === 'A') {
+        const paddle = who === 'host' ? hostPaddle : guestPaddle;
+        paddle.h = canvas.height * PADDLE_H_RATIO;
+      }
+      pu.type = null; pu.shotsLeft = 0;
+      if (who === (isHost ? 'host' : 'guest')) showToast('⏱ Power-up expired');
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  SHOTS
+// ═══════════════════════════════════════════════════════
+function fireShot() {
+  if (!gameRunning || countdownVal > 0) return;
+  const who = isHost ? 'host' : 'guest';
+  const pu  = powerUp[who];
+  if (pu.type !== 'B' || pu.shotsLeft <= 0) return;
+  pu.shotsLeft--;
+
+  const paddle  = isHost ? hostPaddle : guestPaddle;
+  const dir     = isHost ? 1 : -1;
+  const sx      = paddle.x + (isHost ? paddle.w : 0);
+  const sy      = paddle.y + paddle.h / 2;
+  const speed   = canvas.width * 0.018;
+  shots.push({ x: sx, y: sy, vx: dir * speed, r: canvas.width * 0.012, owner: who, alive: true });
+
+  // Tell guest
+  if (isHost) sendToGuest({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
+  else        sendToHost({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
+
+  if (pu.shotsLeft === 0) { pu.type = null; showToast('🔫 Out of shots!'); }
+}
+
+function updateShots(dt) {
+  const cw = canvas.width, ch = canvas.height;
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i];
+    s.x += s.vx * dt;
+    // Remove if past mid-screen (host shots go right, cap at cw/2; guest shots go left, cap at cw/2)
+    const pastMid = s.owner === 'host' ? s.x > cw / 2 : s.x < cw / 2;
+    if (pastMid || s.x < 0 || s.x > cw) { shots.splice(i, 1); continue; }
+
+    // Hit asteroid?
+    let hitAst = false;
+    for (let j = asteroids.length - 1; j >= 0; j--) {
+      const ast = asteroids[j];
+      const dx = s.x - ast.x, dy = s.y - ast.y;
+      if (Math.sqrt(dx*dx+dy*dy) < s.r + ast.r) {
+        breakAsteroid(ast, j);
+        shots.splice(i, 1); hitAst = true; break;
+      }
+    }
+    if (!hitAst) {
+      // Hit surprise box?
+      for (let j = surpriseBoxes.length - 1; j >= 0; j--) {
+        const box = surpriseBoxes[j];
+        const dx = s.x - box.x, dy = s.y - box.y;
+        if (Math.sqrt(dx*dx+dy*dy) < s.r + box.r) {
+          surpriseBoxes.splice(j, 1); shots.splice(i, 1); break;
+        }
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  FRAGMENTS
+// ═══════════════════════════════════════════════════════
+function breakAsteroid(ast, idx) {
+  asteroids.splice(idx, 1);
+  const numFrag = 4 + Math.floor(Math.random() * 3);
+  for (let f = 0; f < numFrag; f++) {
+    const ang   = (f / numFrag) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+    const spd   = ast.r * 0.06 + Math.random() * ast.r * 0.04;
+    const fr    = ast.r * (0.22 + Math.random() * 0.18);
+    const nPts  = 5 + Math.floor(Math.random() * 3);
+    const pts   = [];
+    for (let p = 0; p < nPts; p++)
+      pts.push([(p/nPts)*Math.PI*2, 0.6 + Math.random()*0.6]);
+    fragments.push({
+      x: ast.x + Math.cos(ang) * ast.r * 0.4,
+      y: ast.y + Math.sin(ang) * ast.r * 0.4,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd,
+      r: fr, pts,
+      angle: Math.random() * Math.PI * 2,
+      spin: (Math.random() - 0.5) * 0.05,
+      bornAt: performance.now()
+    });
+  }
+}
+
+function updateFragments(dt) {
+  const cw = canvas.width, ch = canvas.height;
+  const now = performance.now();
+  for (let i = fragments.length - 1; i >= 0; i--) {
+    const f = fragments[i];
+    const age = now - f.bornAt;
+    if (age > FRAGMENT_LIFE) { fragments.splice(i, 1); continue; }
+    f.x += f.vx * dt; f.y += f.vy * dt; f.angle += f.spin * dt;
+    if (f.x - f.r < 0)  { f.x = f.r;      f.vx =  Math.abs(f.vx); }
+    if (f.x + f.r > cw) { f.x = cw - f.r; f.vx = -Math.abs(f.vx); }
+    if (f.y - f.r < 0)  { f.y = f.r;      f.vy =  Math.abs(f.vy); }
+    if (f.y + f.r > ch) { f.y = ch - f.r; f.vy = -Math.abs(f.vy); }
+    // Ball vs fragment
+    const dx = ball.x - f.x, dy = ball.y - f.y;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if (dist < ball.r + f.r && dist > 0) {
+      const nx = dx/dist, ny = dy/dist;
+      const dot = ball.vx*nx + ball.vy*ny;
+      ball.vx -= 2*dot*nx; ball.vy -= 2*dot*ny;
+      const spd = Math.max(ball.speed * 0.9, canvas.width * 0.006);
+      const cur = Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
+      if (cur > 0) { ball.vx = (ball.vx/cur)*spd; ball.vy = (ball.vy/cur)*spd; }
+      ball.speed = spd;
+      fragments.splice(i, 1);
+    }
+  }
+}
+
 function drawAsteroid(ast) {
   ctx.save();
   ctx.translate(ast.x, ast.y);
@@ -979,7 +1185,13 @@ function initPeer(id, onOpen) {
       peer.destroy(); initPeer('CPONG-' + newCode, onOpen);
     } else { showToast('Connection error: ' + err.type); cancelHost(); }
   });
-  peer.on('disconnected', () => setConnStatus(false, 'Disconnected'));
+  peer.on('disconnected', () => {
+    setConnStatus(false, 'Reconnecting…');
+    // PeerJS lost signaling server connection — reconnect to keep room alive
+    if (peer && !peer.destroyed) {
+      try { peer.reconnect(); } catch(e) {}
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1052,6 +1264,17 @@ function setupConn() {
       case 'gameover':if (!isHost) receiveGameOver(data);  break;
       case 'restart': if (!isHost) startGame(data.config); break;
       case 'taunt':   activateTaunt(data.sender); break;
+      case 'powerup': activatePowerUp(data.eater, data.boxType); break;
+      case 'fireshot': if (isHost) fireShot(); break; // guest asked host to fire
+      case 'shot':
+        // Guest receives shot info — just add for rendering (host owns physics)
+        if (!isHost) {
+          const cw = canvas.width, ch = canvas.height;
+          const dir = data.who === 'host' ? 1 : -1;
+          shots.push({ x: data.sx*cw, y: data.sy*ch, vx: dir*cw*0.018,
+            r: cw*0.012, owner: data.who, alive: true });
+        }
+        break;
     }
   });
   conn.on('close', () => {
@@ -1071,7 +1294,10 @@ function startGame(config) {
   resizeCanvas();
   score.host = 0; score.guest = 0;
   guestPaddleY = 0.5; myTouchY = null; isDragging = false;
-  asteroids = []; totalPaddleHits = 0;
+  asteroids = []; fragments = []; surpriseBoxes = []; shots = [];
+  totalPaddleHits = 0;
+  powerUp.host  = { type: null, endsAt: 0, shotsLeft: 0 };
+  powerUp.guest = { type: null, endsAt: 0, shotsLeft: 0 };
   gameRunning = true;
   initPaddles(); resetBall(1);
   setupTouchControls();
@@ -1156,6 +1382,12 @@ function onTouchStart(e) {
   const px = touch.clientX, py = touch.clientY;
   if (isTouchOnMyPaddle(px, py)) {
     isDragging = true;
+    // Fire shot if power-up B is active
+    const who = isHost ? 'host' : 'guest';
+    if (powerUp[who].type === 'B' && powerUp[who].shotsLeft > 0) {
+      if (isHost) fireShot();
+      else { sendToHost({ type: 'fireshot' }); }
+    }
   } else {
     isDragging = false;
   }
@@ -1241,17 +1473,32 @@ function updateGame(dt) {
   }
 
   // Paddle collisions
-  if (checkPaddleCollision(ball, hostPaddle, 1))  {
-    totalPaddleHits++;
+  let hitter = null;
+  if (checkPaddleCollision(ball, hostPaddle, 1))  { totalPaddleHits++; hitter = 'host'; }
+  if (checkPaddleCollision(ball, guestPaddle, -1)){ totalPaddleHits++; hitter = 'guest'; }
+  if (hitter) {
     if (totalPaddleHits % ASTEROID_HIT_SPAWN === 0) spawnAsteroid();
-  }
-  if (checkPaddleCollision(ball, guestPaddle, -1)) {
-    totalPaddleHits++;
-    if (totalPaddleHits % ASTEROID_HIT_SPAWN === 0) spawnAsteroid();
+    if (totalPaddleHits % BOX_HIT_SPAWN === 0 && totalPaddleHits % ASTEROID_HIT_SPAWN !== 0)
+      spawnSurpriseBox();
   }
 
   // Asteroid physics
   updateAsteroids(dt);
+
+  // Surprise boxes
+  updateSurpriseBoxes(dt);
+
+  // Shots
+  updateShots(dt);
+
+  // Fragments
+  updateFragments(dt);
+
+  // Power-up expiry
+  updatePowerUps();
+
+  // Titillation timer
+  titillateT += dt * 0.18;
 
   // Scoring
   if (ball.x < 0)  awardPoint('guest');
@@ -1296,14 +1543,23 @@ function receivePoint(data) {
 
 function sendStateToGuest() {
   const cw = canvas.width, ch = canvas.height;
+  const now = performance.now();
   sendToGuest({
     type: 'state',
     ball: { x: ball.x / cw, y: ball.y / ch, r: ball.r / cw },
-    hostPaddleY:  (hostPaddle.y  + hostPaddle.h  / 2) / ch,
-    guestPaddleY: (guestPaddle.y + guestPaddle.h / 2) / ch,
+    hostPaddleY:   (hostPaddle.y  + hostPaddle.h  / 2) / ch,
+    hostPaddleH:   hostPaddle.h / ch,
+    guestPaddleY:  (guestPaddle.y + guestPaddle.h / 2) / ch,
+    guestPaddleH:  guestPaddle.h / ch,
     score: { ...score },
     countdown: countdownVal,
-    asteroids: asteroids.map(a => ({ x: a.x/cw, y: a.y/ch, r: a.r/cw, angle: a.angle, pts: a.pts }))
+    asteroids: asteroids.map(a => ({ x: a.x/cw, y: a.y/ch, r: a.r/cw, angle: a.angle, pts: a.pts })),
+    boxes: surpriseBoxes.map(b => ({ x: b.x/cw, y: b.y/ch, r: b.r/cw, angle: b.angle, type: b.type })),
+    frags: fragments.map(f => ({ x: f.x/cw, y: f.y/ch, r: f.r/cw, angle: f.angle, pts: f.pts,
+      age: (now - f.bornAt) / FRAGMENT_LIFE })),
+    shots: shots.map(s => ({ x: s.x/cw, y: s.y/ch, r: s.r/cw, owner: s.owner })),
+    puHost:  { type: powerUp.host.type,  rem: Math.max(0, powerUp.host.endsAt  - now), shots: powerUp.host.shotsLeft },
+    puGuest: { type: powerUp.guest.type, rem: Math.max(0, powerUp.guest.endsAt - now), shots: powerUp.guest.shotsLeft }
   });
 }
 
@@ -1311,20 +1567,56 @@ function receiveState(data) {
   const cw = canvas.width, ch = canvas.height;
   ball.x = data.ball.x * cw; ball.y = data.ball.y * ch;
   ball.r = data.ball.r * cw; ball.vx = 0; ball.vy = 0;
+  // Sync paddle heights (power-up A changes them)
+  if (data.hostPaddleH)  hostPaddle.h  = data.hostPaddleH  * ch;
+  if (data.guestPaddleH) guestPaddle.h = data.guestPaddleH * ch;
   hostPaddle.y  = data.hostPaddleY  * ch - hostPaddle.h  / 2;
   guestPaddle.y = data.guestPaddleY * ch - guestPaddle.h / 2;
   score.host = data.score.host; score.guest = data.score.guest;
   if (data.countdown > 0) countdownVal = data.countdown;
+
+  // Asteroids
   if (data.asteroids) {
-    // Sync asteroids for rendering on guest
     while (asteroids.length < data.asteroids.length)
       asteroids.push({ x:0,y:0,r:0,angle:0,pts:[],vx:0,vy:0,spin:0 });
     asteroids.length = data.asteroids.length;
-    data.asteroids.forEach((a, i) => {
-      asteroids[i].x = a.x * cw; asteroids[i].y = a.y * ch;
-      asteroids[i].r = a.r * cw; asteroids[i].angle = a.angle;
-      asteroids[i].pts = a.pts;
+    data.asteroids.forEach((a,i) => {
+      asteroids[i].x = a.x*cw; asteroids[i].y = a.y*ch;
+      asteroids[i].r = a.r*cw; asteroids[i].angle = a.angle; asteroids[i].pts = a.pts;
     });
+  }
+  // Surprise boxes
+  if (data.boxes) {
+    while (surpriseBoxes.length < data.boxes.length)
+      surpriseBoxes.push({ x:0,y:0,r:0,angle:0,type:'A',vx:0,vy:0,spin:0 });
+    surpriseBoxes.length = data.boxes.length;
+    data.boxes.forEach((b,i) => {
+      surpriseBoxes[i].x = b.x*cw; surpriseBoxes[i].y = b.y*ch;
+      surpriseBoxes[i].r = b.r*cw; surpriseBoxes[i].angle = b.angle; surpriseBoxes[i].type = b.type;
+    });
+  }
+  // Fragments
+  if (data.frags) {
+    fragments = data.frags.map(f => ({
+      x: f.x*cw, y: f.y*ch, r: f.r*cw, angle: f.angle, pts: f.pts,
+      bornAt: performance.now() - f.age * FRAGMENT_LIFE,
+      vx:0, vy:0, spin:0
+    }));
+  }
+  // Shots (just for rendering on guest)
+  if (data.shots) {
+    shots = data.shots.map(s => ({ x: s.x*cw, y: s.y*ch, r: s.r*cw, owner: s.owner, alive: true, vx:0, vy:0 }));
+  }
+  // Power-ups
+  if (data.puHost) {
+    powerUp.host.type = data.puHost.type;
+    powerUp.host.endsAt = performance.now() + data.puHost.rem;
+    powerUp.host.shotsLeft = data.puHost.shots;
+  }
+  if (data.puGuest) {
+    powerUp.guest.type = data.puGuest.type;
+    powerUp.guest.endsAt = performance.now() + data.puGuest.rem;
+    powerUp.guest.shotsLeft = data.puGuest.shots;
   }
 }
 
@@ -1411,9 +1703,49 @@ function render() {
   // Asteroids
   asteroids.forEach(drawAsteroid);
 
-  // Paddles
-  drawPaddle(hostPaddle,  '#6c63ff', '#9c5fff');
-  drawPaddle(guestPaddle, '#ff6584', '#ff8fa3');
+  // Paddles (titillate if power-up active)
+  const hostTitil  = powerUp.host.type  ? Math.sin(titillateT * 18) * 4 : 0;
+  const guestTitil = powerUp.guest.type ? Math.sin(titillateT * 18) * 4 : 0;
+  const hp = {...hostPaddle,  y: hostPaddle.y  + hostTitil};
+  const gp = {...guestPaddle, y: guestPaddle.y + guestTitil};
+  const hColor = powerUp.host.type  === 'A' ? ['#00e5ff','#00b0ff'] :
+                 powerUp.host.type  === 'B' ? ['#ffea00','#ff6d00'] : ['#6c63ff','#9c5fff'];
+  const gColor = powerUp.guest.type === 'A' ? ['#00e5ff','#00b0ff'] :
+                 powerUp.guest.type === 'B' ? ['#ffea00','#ff6d00'] : ['#ff6584','#ff8fa3'];
+  drawPaddle(hp, hColor[0], hColor[1]);
+  drawPaddle(gp, gColor[0], gColor[1]);
+
+  // Power-up remaining bar
+  for (const [who, paddle, color] of [['host',hp,hColor[0]],['guest',gp,gColor[0]]]) {
+    const pu = powerUp[who];
+    if (!pu.type) continue;
+    const rem = Math.max(0, pu.endsAt - performance.now()) / BOX_DURATION;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.55;
+    const bw = 5, bh = paddle.h * rem;
+    const bx = who === 'host' ? paddle.x - 9 : paddle.x + paddle.w + 4;
+    ctx.fillRect(bx, paddle.y + paddle.h - bh, bw, bh);
+    ctx.globalAlpha = 1;
+    // Shot count
+    if (pu.type === 'B' && pu.shotsLeft > 0) {
+      ctx.font = `bold ${Math.min(cw*0.028,14)}px monospace`;
+      ctx.fillStyle = '#ffea00';
+      ctx.textAlign = who === 'host' ? 'right' : 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('🔫' + pu.shotsLeft, bx + (who==='host' ? 0 : bw+2), paddle.y);
+    }
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+  // Surprise boxes
+  surpriseBoxes.forEach(drawSurpriseBox);
+
+  // Shots
+  shots.forEach(drawShot);
+
+  // Fragments
+  const now_r = performance.now();
+  fragments.forEach(f => drawFragment(f, 1 - (now_r - f.bornAt) / FRAGMENT_LIFE));
 
   // Ball
   if (countdownVal <= 0 && ball.x !== undefined) drawBall();
@@ -1445,11 +1777,17 @@ function render() {
   }
   ctx.textAlign = 'center';
 
-  // Asteroid count hint
-  if (asteroids.length > 0 && countdownVal <= 0) {
+  // HUD: asteroid + box count
+  if ((asteroids.length > 0 || surpriseBoxes.length > 0) && countdownVal <= 0) {
     ctx.font = `${Math.min(cw * 0.022, 11)}px sans-serif`;
-    ctx.fillStyle = 'rgba(255,140,60,0.5)';
-    ctx.fillText('☄️'.repeat(asteroids.length), cw / 2, ch * 0.055);
+    ctx.textAlign = 'center';
+    let hudStr = '';
+    if (asteroids.length > 0) hudStr += '☄️'.repeat(asteroids.length);
+    if (surpriseBoxes.length > 0) hudStr += (hudStr?' ':'') + (surpriseBoxes.map(b=>b.type==='A'?'🔵':'🔫').join(''));
+    if (hudStr) {
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillText(hudStr, cw / 2, ch * 0.055);
+    }
   }
 
   // Countdown
@@ -1502,6 +1840,59 @@ function drawNebula(cw, ch) {
   g2.addColorStop(0, `rgba(120,30,80,${0.06 + Math.sin(t + 1) * 0.02})`);
   g2.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g2; ctx.fillRect(0, 0, cw, ch);
+}
+
+function drawSurpriseBox(box) {
+  ctx.save();
+  ctx.translate(box.x, box.y);
+  ctx.rotate(box.angle);
+  const s = box.r * 1.5;
+  const glow = box.type === 'A' ? '#00e5ff' : '#ffea00';
+  const fill = box.type === 'A' ? '#003355' : '#332200';
+  ctx.shadowColor = glow; ctx.shadowBlur = 22;
+  ctx.strokeStyle = glow; ctx.lineWidth = 2.5;
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.roundRect(-s/2, -s/2, s, s, s*0.18);
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.font = `bold ${s*0.7}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(box.type === 'A' ? '🔵' : '🔫', 0, 1);
+  ctx.restore();
+}
+
+function drawShot(s) {
+  ctx.save();
+  const color = s.owner === 'host' ? '#ffea00' : '#ff6d00';
+  ctx.shadowColor = color; ctx.shadowBlur = 18;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(s.x, s.y, s.r * 2.2, s.r * 0.7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawFragment(f, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(alpha, 1);
+  ctx.translate(f.x, f.y);
+  ctx.rotate(f.angle);
+  ctx.beginPath();
+  for (let i = 0; i < f.pts.length; i++) {
+    const [a, ratio] = f.pts[i];
+    const px = Math.cos(a) * f.r * ratio, py = Math.sin(a) * f.r * ratio;
+    i === 0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#6a5040';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,140,60,0.4)'; ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 function drawPaddle(p, c1, c2) {
