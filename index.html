@@ -845,7 +845,11 @@ function startLobbyMusic() {
 }
 
 function startGameMusic() {
-  if (!audioCtx) return;
+  if (!audioCtx || audioCtx.state === 'suspended') {
+    // Try to resume if suspended (AI mode starts without explicit user gesture on music)
+    if (audioCtx) audioCtx.resume().then(() => { if (activeNodes.length === 0 && !muted) startGameMusic(); });
+    return;
+  }
   stopAllAudio(1.0);
   gameThemeIdx = 1; // game themes start at index 1
   setTimeout(() => {
@@ -871,16 +875,16 @@ function scheduleNextTheme() {
 // ═══════════════════════════════════════════════════════
 function showTauntBtn() {
   const btn = document.getElementById('tauntBtn');
-  btn.className = isHost ? 'host-side' : 'guest-side';
-  btn.style.display = 'block';
+  if (btn) { btn.className = isHost ? 'host-side' : 'guest-side'; btn.style.display = 'block'; }
   const mb = document.getElementById('musicBtn');
-  mb.className = isHost ? 'host-side' : 'guest-side';
-  mb.style.display = 'flex';
+  if (mb) { mb.className = isHost ? 'host-side' : 'guest-side'; mb.style.display = 'flex'; }
   updateMusicBtnIcon();
 }
 function hideTauntBtn() {
-  document.getElementById('tauntBtn').style.display = 'none';
-  document.getElementById('musicBtn').style.display = 'none';
+  const btn = document.getElementById('tauntBtn');
+  if (btn) btn.style.display = 'none';
+  const mb = document.getElementById('musicBtn');
+  if (mb) mb.style.display = 'none';
   hideVoiceBtn();
 }
 
@@ -1438,11 +1442,14 @@ function selectDiff(d) {
 function startAIGame() {
   initAudio();
   aiMode = true;
-  isHost = true; // human is always host in AI mode
+  isHost = true;
   opponentName = '🤖 AI (' + aiDifficulty + ')';
-  peer = null; conn = null; // no P2P needed
-  startGame();
-  startAgents();
+  peer = null; conn = null;
+  // Small delay so audio context is running before startGameMusic() fires
+  setTimeout(() => {
+    startGame();
+    startAgents();
+  }, 100);
 }
 
 function stopAIGame() {
@@ -2098,7 +2105,6 @@ function updatePowerUps() {
       }
       pu.type = null;
       if (who === (isHost ? 'host' : 'guest')) showToast('⏱ Power-up expired');
-      if (who === (isHost ? 'host' : 'guest')) showToast('⏱ Power-up expired');
     }
   }
 }
@@ -2425,7 +2431,7 @@ function startGame(config) {
   ballTrail.length = 0;
   streak.host = 0; streak.guest = 0;
   rematchPending = false;
-  if (isHost) opponentName = '???';
+  if (isHost && !aiMode) opponentName = '???'; // AI mode sets opponentName before startGame
   totalPaddleHits = 0;
   powerUp.host  = { type: null, endsAt: 0 };
   powerUp.guest = { type: null, endsAt: 0 };
