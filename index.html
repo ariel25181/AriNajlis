@@ -93,15 +93,16 @@
       z-index: 100; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #volBtn {
-      position: fixed; bottom: 76px; right: 16px;
+      position: fixed; bottom: 16px; right: 16px;
       background: rgba(255,255,255,0.1); border: 1.5px solid rgba(255,255,255,0.2);
-      color: rgba(255,255,255,0.75); font-size: 1.3rem; width: 48px; height: 48px;
+      color: rgba(255,255,255,0.75); font-size: 1.1rem; width: 38px; height: 38px;
       border-radius: 50%; cursor: pointer; z-index: 300;
       display: flex; align-items: center; justify-content: center;
       -webkit-tap-highlight-color: transparent;
-      box-shadow: 0 0 12px rgba(108,99,255,0.3);
     }
-    #volBtn:active { background: rgba(255,255,255,0.25); transform: scale(0.92); }
+    #volBtn:active { opacity: 0.6; }
+    /* Hide vol button during active game — use in-game musicBtn instead */
+    body.game-active #volBtn { display: none !important; }
     #tauntBtn {
       position: fixed; bottom: 28px; z-index: 200; display: none;
       border: none; border-radius: 14px;
@@ -117,20 +118,19 @@
     #tauntBtn:active { transform: scale(0.92); }
     #tauntBtn.cooling { opacity: 0.28; pointer-events: none; }
     #musicBtn {
-      position: fixed; bottom: 90px; z-index: 200; display: none;
+      position: fixed; top: 48px; z-index: 200; display: none;
       border: none; border-radius: 50%;
-      width: 48px; height: 48px; cursor: pointer;
-      background: rgba(255,255,255,0.1);
-      border: 1.5px solid rgba(255,255,255,0.25);
-      color: white; font-size: 1.3rem;
-      box-shadow: 0 0 14px rgba(108,99,255,0.4);
-      transition: transform 0.1s, background 0.2s;
-      display: none; align-items: center; justify-content: center;
+      width: 36px; height: 36px; cursor: pointer;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: rgba(255,255,255,0.7); font-size: 1rem;
+      transition: opacity 0.2s;
+      align-items: center; justify-content: center;
       -webkit-tap-highlight-color: transparent;
     }
-    #musicBtn.host-side  { left: 18px; }
-    #musicBtn.guest-side { right: 18px; }
-    #musicBtn:active { transform: scale(0.88); background: rgba(255,255,255,0.25); }
+    #musicBtn.host-side  { left: 10px; }
+    #musicBtn.guest-side { right: 10px; }
+    #musicBtn:active { opacity: 0.5; }
     /* ── PLAYER AUTH SCREENS ── */
     .auth-box {
       width:100%;max-width:340px;background:var(--surface);
@@ -772,13 +772,27 @@ function playTheme(theme, fadeIn = 2.0) {
   padMaster.connect(masterGain);
   addDelay(padMaster, 0.38, 0.28, 0.22);
 
+  // Optional overdrive distortion for rock themes
+  let distNode = null;
+  if (theme.distort) {
+    distNode = audioCtx.createWaveShaper();
+    const k = 180;
+    const n = 256, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x));
+    }
+    distNode.curve = curve;
+    distNode.oversample = '4x';
+    distNode.connect(padFilter);
+  }
+
   theme.pad.forEach((freq, i) => {
     const osc = audioCtx.createOscillator();
-    // Redondos: use sawtooth for raw rock energy, triangle for softer pads
-    osc.type = theme.distort ? (i % 2 === 0 ? 'sawtooth' : 'square') : (i % 2 === 0 ? 'sine' : 'triangle');
+    osc.type = theme.distort ? 'sawtooth' : (i % 2 === 0 ? 'sine' : 'triangle');
     osc.frequency.value = freq;
-    osc.detune.value = (i - theme.pad.length / 2) * (theme.distort ? 10 : 6);
-    osc.connect(padFilter);
+    osc.detune.value = (i - theme.pad.length / 2) * (theme.distort ? 12 : 6);
+    osc.connect(theme.distort ? distNode : padFilter);
     osc.start();
     activeNodes.push({ osc, gain: padMaster });
   });
@@ -814,9 +828,20 @@ function startArp(theme, startDelaySec = 0) {
     // main note
     const osc  = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    osc.type = theme.distort ? 'square' : 'sine';
+    osc.type = theme.distort ? 'sawtooth' : 'sine';
     osc.frequency.value = freq;
-    osc.connect(gain);
+    if (theme.distort) {
+      const d2 = audioCtx.createWaveShaper();
+      const k2 = 80, n2 = 128, c2 = new Float32Array(n2);
+      for (let ii = 0; ii < n2; ii++) {
+        const x = (ii * 2) / n2 - 1;
+        c2[ii] = ((Math.PI + k2) * x) / (Math.PI + k2 * Math.abs(x));
+      }
+      d2.curve = c2;
+      osc.connect(d2); d2.connect(gain);
+    } else {
+      osc.connect(gain);
+    }
     gain.connect(masterGain);
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(theme.arpVol, now + 0.04);
@@ -840,22 +865,34 @@ function startArp(theme, startDelaySec = 0) {
 
 function startLobbyMusic() {
   if (!audioCtx) return;
-  stopAllAudio(0.8);
-  setTimeout(() => playTheme(THEMES[0], 3.0), 900);
+  const go = () => {
+    stopAllAudio(0.6);
+    setTimeout(() => {
+      if (audioCtx.state === 'running') playTheme(THEMES[0], 2.5);
+    }, 700);
+  };
+  if (audioCtx.state === 'running') go();
+  else audioCtx.resume().then(go).catch(() => {});
 }
 
 function startGameMusic() {
-  if (!audioCtx || audioCtx.state === 'suspended') {
-    // Try to resume if suspended (AI mode starts without explicit user gesture on music)
-    if (audioCtx) audioCtx.resume().then(() => { if (activeNodes.length === 0 && !muted) startGameMusic(); });
-    return;
+  if (!audioCtx) return;
+  // Always try resume — on mobile context may be suspended
+  const go = () => {
+    stopAllAudio(0.5);
+    gameThemeIdx = 1;
+    setTimeout(() => {
+      if (audioCtx.state === 'running') {
+        playTheme(THEMES[gameThemeIdx], 1.5);
+        scheduleNextTheme();
+      }
+    }, 600);
+  };
+  if (audioCtx.state === 'running') {
+    go();
+  } else {
+    audioCtx.resume().then(go).catch(() => {});
   }
-  stopAllAudio(1.0);
-  gameThemeIdx = 1; // game themes start at index 1
-  setTimeout(() => {
-    playTheme(THEMES[gameThemeIdx], 2.0);
-    scheduleNextTheme();
-  }, 1100);
 }
 
 function scheduleNextTheme() {
@@ -886,6 +923,8 @@ function hideTauntBtn() {
   const mb = document.getElementById('musicBtn');
   if (mb) mb.style.display = 'none';
   hideVoiceBtn();
+  document.body.classList.remove('game-active');
+  canvas.style.transform = ''; // always clear shake on exit
 }
 
 function toggleLobbyMusic() {
@@ -1857,22 +1896,34 @@ function showVoiceBtn() {
   // Position opponent speaking dot on opposite side
   const dot = document.getElementById('opponentSpeakDot');
   if (dot) {
-    dot.style.bottom = '175px';
-    dot.style[isHost ? 'right' : 'left'] = '22px';
+    dot.style.top = '91px';
+    dot.style[isHost ? 'left' : 'right'] = '50px';
   }
-  // Toggle mic on/off with single tap (much easier while moving paddle)
+  // Remove any previous listener then add fresh (prevents duplicate on rematch)
+  btn.removeEventListener('click', toggleTalking);
   btn.addEventListener('click', toggleTalking);
 }
 
 function toggleTalking(e) {
   if (e) e.preventDefault();
-  if (!localStream) { initVoice(); return; }
+  if (!localStream) {
+    // First tap: request mic permission, then immediately turn it on
+    initVoice().then(() => {
+      if (localStream) {
+        voiceMuted = false;
+        localStream.getAudioTracks().forEach(t => t.enabled = true);
+        const b = document.getElementById('voiceBtn');
+        if (b) { b.classList.remove('muted'); b.classList.add('talking'); }
+        duckMusic(true);
+        showToast('🎙️ Mic on');
+      }
+    });
+    return;
+  }
   voiceMuted = !voiceMuted;
   localStream.getAudioTracks().forEach(t => t.enabled = !voiceMuted);
   const btn = document.getElementById('voiceBtn');
-  btn.classList.toggle('muted', voiceMuted);
-  btn.classList.toggle('talking', !voiceMuted);
-  // Duck music when mic is on so voice is heard clearly
+  if (btn) { btn.classList.toggle('muted', voiceMuted); btn.classList.toggle('talking', !voiceMuted); }
   duckMusic(!voiceMuted);
   showToast(voiceMuted ? '🔇 Mic off' : '🎙️ Mic on');
 }
@@ -2138,9 +2189,8 @@ function updateShots(dt) {
   for (let i = shots.length - 1; i >= 0; i--) {
     const s = shots[i];
     s.x += s.vx * dt;
-    // Remove if past mid-screen (host shots go right, cap at cw/2; guest shots go left, cap at cw/2)
-    const pastMid = s.owner === 'host' ? s.x > cw / 2 : s.x < cw / 2;
-    if (pastMid || s.x < 0 || s.x > cw) { shots.splice(i, 1); continue; }
+    // Remove when shot leaves screen (no mid-screen cap — full court range)
+    if (s.x < -s.r || s.x > cw + s.r) { shots.splice(i, 1); continue; }
 
     // Hit asteroid?
     let hitAst = false;
@@ -2442,6 +2492,7 @@ function startGame(config) {
   showTauntBtn();
   showVoiceBtn();
   showScreen('gameScreen');
+  document.body.classList.add('game-active');
   // Init voice on game start (inside user gesture context)
   if (!aiMode && !localStream) initVoice().then(() => {
     if (isHost && conn) startVoiceCall(conn.peer);
@@ -2860,6 +2911,7 @@ function receiveState(data) {
 // ═══════════════════════════════════════════════════════
 function endGame(winner) {
   hideTauntBtn();
+  canvas.style.transform = ''; // clear any residual shake
   gameRunning = false; cancelAnimationFrame(frameId);
   if (aiMode) {
     stopAgents();
@@ -2929,12 +2981,11 @@ function render() {
   const cw = canvas.width, ch = canvas.height;
   ctx.clearRect(0, 0, cw, ch);
 
-  // Screen shake
+  // Screen shake via CSS transform (safe — never shifts drawing origin)
   const sh = getShakeOffset();
-  if (sh.x !== 0 || sh.y !== 0) {
-    ctx.save();
-    ctx.translate(sh.x, sh.y);
-  }
+  canvas.style.transform = (sh.x !== 0 || sh.y !== 0)
+    ? `translate(${sh.x}px, ${sh.y}px)`
+    : '';
 
   // Background
   const bgGrad = ctx.createRadialGradient(cw/2, ch/2, 0, cw/2, ch/2, Math.max(cw, ch) * 0.8);
