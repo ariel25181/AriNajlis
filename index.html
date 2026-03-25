@@ -168,14 +168,27 @@
       pointer-events: none;
     }
     #commentaryBubble {
-      background: rgba(10,8,30,0.88); border: 1.5px solid rgba(108,99,255,0.5);
-      color: #e8e8ff; font-size: clamp(0.75rem,3vw,0.95rem); font-weight: 600;
-      padding: 8px 18px; border-radius: 50px; max-width: 320px; text-align: center;
-      backdrop-filter: blur(8px); box-shadow: 0 0 20px rgba(108,99,255,0.3);
-      opacity: 0; transition: opacity 0.3s;
-      letter-spacing: 0.3px;
+      background: linear-gradient(135deg, rgba(12,8,40,0.95), rgba(30,15,60,0.95));
+      border: 2px solid rgba(150,120,255,0.6);
+      color: #ffffff;
+      font-size: clamp(1rem, 4vw, 1.3rem);
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      padding: 12px 24px;
+      border-radius: 50px;
+      max-width: min(88vw, 400px);
+      text-align: center;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 0 30px rgba(108,99,255,0.5), 0 0 60px rgba(108,99,255,0.2), inset 0 0 20px rgba(108,99,255,0.1);
+      opacity: 0;
+      transform: translateY(10px) scale(0.95);
+      transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.34,1.56,.64,1);
+      text-shadow: 0 0 20px rgba(180,160,255,0.8), 0 2px 4px rgba(0,0,0,0.5);
     }
-    #commentaryBubble.visible { opacity: 1; }
+    #commentaryBubble.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
     #agentStatusBar {
       display: flex; gap: 8px; align-items: center;
     }
@@ -209,6 +222,42 @@
     }
     @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
     #musicPrompt span { font-size: 1.4rem; display: block; margin-bottom: 4px; }
+
+    /* ── IN-GAME BUTTONS ── */
+    #voiceBtn {
+      position: fixed; top: 90px; z-index: 400;
+      border: 1.5px solid rgba(0,230,118,0.4); border-radius: 50%;
+      width: 40px; height: 40px; cursor: pointer;
+      background: rgba(0,10,5,0.75); color: white; font-size: 1.1rem;
+      display: none; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #voiceBtn.host-side  { left: 8px; }
+    #voiceBtn.guest-side { right: 8px; }
+    #voiceBtn.talking    { background: rgba(0,230,118,0.3); border-color: #00e676; }
+    #voiceBtn.muted      { opacity: 0.38; }
+    #voiceBtn:active     { opacity: 0.5; }
+    #musicBtn {
+      position: fixed; top: 48px; z-index: 400;
+      border: 1px solid rgba(255,255,255,0.2); border-radius: 50%;
+      width: 40px; height: 40px; cursor: pointer;
+      background: rgba(10,10,30,0.75); color: rgba(255,255,255,0.8); font-size: 1.1rem;
+      display: none; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #musicBtn.host-side  { left: 8px; }
+    #musicBtn.guest-side { right: 8px; }
+    #musicBtn:active { opacity: 0.5; }
+    #opponentSpeakDot {
+      position: fixed; z-index: 401; display: none;
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #00e676; box-shadow: 0 0 6px #00e676;
+      animation: speakPulse 0.6s ease-in-out infinite;
+      top: 92px;
+    }
+    @keyframes speakPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.65)} }
+    body.game-active #volBtn { display: none !important; }
   </style>
 </head>
 <body>
@@ -225,18 +274,18 @@
   <span>🎵</span>Tap here to enable music
 </div>
 
-<!-- AI AGENT HUD -->
-<div id="agentHud">
+<!-- AI AGENT HUD — only visible in AI mode via startAgents() -->
+<div id="agentHud" style="display:none">
   <div id="commentaryBubble"></div>
-  <div id="agentStatusBar">
-    <span class="agent-dot" id="dotPaddle" title="AI Paddle"></span>
-    <span class="agent-label">Paddle</span>
+  <div id="agentStatusBar" style="display:none">
+    <span class="agent-dot" id="dotPaddle"></span>
+    <span class="agent-label">AI</span>
     <span style="color:var(--border)">|</span>
-    <span class="agent-dot" id="dotMaster" title="Game Master"></span>
-    <span class="agent-label">Master</span>
+    <span class="agent-dot" id="dotMaster"></span>
+    <span class="agent-label">GM</span>
     <span style="color:var(--border)">|</span>
-    <span class="agent-dot" id="dotComm" title="Commentator"></span>
-    <span class="agent-label">Comms</span>
+    <span class="agent-dot" id="dotComm"></span>
+    <span class="agent-label">💬</span>
   </div>
 </div>
 
@@ -292,6 +341,9 @@
       <h3>Login</h3>
       <input class="auth-input" id="loginPlayerName" placeholder="Your name…" maxlength="20" />
       <button class="btn btn-primary" style="margin-bottom:0" onclick="loginPlayer()">Login &amp; Play →</button>
+      <p style="color:var(--muted);font-size:0.72rem;margin-top:10px;text-align:center;line-height:1.5">
+        ⚠️ Players are saved per browser.<br>Same browser = same profile.
+      </p>
     </div>
   </div>
 
@@ -545,6 +597,11 @@ window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 300)
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  // Ensure music is playing on lobby/player screens
+  if ((id === 'lobbyScreen' || id === 'playerScreen' || id === 'waitingScreen' || id === 'joiningScreen') 
+      && audioCtx && audioCtx.state === 'running' && activeNodes.length === 0 && !muted) {
+    startLobbyMusic();
+  }
 }
 function setConnStatus(connected, label) {
   document.getElementById('connDot').className = 'dot' + (connected ? ' connected' : '');
@@ -1379,11 +1436,15 @@ async function runCommentatorAgent(eventType, context) {
   lastCommentary = now;
   setAgentDot('Comm', 'thinking');
 
-  const systemPrompt = `Eres el comentarista de un juego arcade de ping pong cósmico.
-Tu estilo: energético, argentino, inspirado en los Redonditos de Ricota.
-Genera UNA frase corta (máx 8 palabras) para el evento dado.
-Usa jerga argentina: "¡la puta madre!", "¡qué golazo!", "¡se la comió!", "¡dios mío!", etc.
-Responde SOLO con la frase, sin comillas.`;
+  const playerCtx = currentPlayer ? currentPlayer.name : 'El jugador';
+  const systemPrompt = `Eres el comentarista oficial de un torneo de ping pong cósmico intergaláctico.
+Tu estilo es apasionado, elegante y espectacular — como un gran narrador deportivo.
+IMPORTANTE: Usa lenguaje totalmente apropiado, sin groserías ni palabras vulgares.
+Genera UNA sola frase corta y emocionante (máx 8 palabras) para el evento.
+Usa frases como: "¡Increíble jugada!", "¡Magistral!", "¡Imparable!", "¡El cosmos lo celebra!",
+"¡Qué precisión!", "¡Sin piedad!", "¡El campeón emerge!", "¡Fabuloso!", "¡Eso es clase!".
+Puedes mencionar al jugador: ${playerCtx}.
+Responde SOLO con la frase, sin comillas, sin puntuación extra.`;
 
   const userPrompt = `Evento: ${eventType}. Contexto: ${context}`;
 
@@ -1395,11 +1456,12 @@ Responde SOLO con la frase, sin comillas.`;
     setAgentDot('Comm', 'error');
     // Fallback static commentary
     const fallbacks = {
-      'goal_human': ['¡Gooool del humano!', '¡Qué pingazo!', '¡Tomatelá, robot!'],
-      'goal_ai':    ['¡La máquina gana!', '¡Te comió, pibe!', '¡Llora!'],
-      'asteroid':   ['¡Meteoro del orto!', '¡Asteroide boludo!'],
-      'powerup':    ['¡Power up, loco!', '¡Magia espacial!'],
-      'streak':     ['¡En llamas, carajo!', '¡Imparable!']
+      'goal_human': ['¡Extraordinario punto!', '¡Magistral jugada!', '¡El humano domina el cosmos!', '¡Eso es precisión pura!'],
+      'goal_ai':    ['¡La inteligencia artificial triunfa!', '¡Cálculo perfecto!', '¡La máquina no perdona!', '¡Impecable!'],
+      'asteroid':   ['¡El asteroide ha sido destruido!', '¡Impacto cósmico!', '¡Fragmentos en el espacio!'],
+      'powerup':    ['¡Poder especial activado!', '¡Magia cósmica!', '¡El universo favorece al valiente!'],
+      'streak':     ['¡Racha imparable!', '¡En llamas estelares!', '¡Dominio absoluto!'],
+      'game_start': ['¡Que comience el duelo cósmico!', '¡Los astros se alinean!', '¡Bienvenidos al torneo intergaláctico!']
     };
     const opts = fallbacks[eventType] || fallbacks['asteroid'];
     showCommentary(opts[Math.floor(Math.random() * opts.length)]);
@@ -1414,6 +1476,8 @@ Responde SOLO con la frase, sin comillas.`;
 function startAgents() {
   if (!aiMode) return;
   document.getElementById('agentHud').style.display = 'flex';
+  const sb = document.getElementById('agentStatusBar');
+  if (sb) sb.style.display = 'flex';
   aiCallCount = 0;
 
   // Agent 1: Paddle — runs every 350ms
@@ -3092,20 +3156,47 @@ function render() {
   ctx.fillText(score.guest, cw * 0.72, scoreY);
   ctx.shadowBlur = 0;
 
-  // Player name labels under scores
-  const myName  = currentPlayer ? currentPlayer.name : (isHost ? 'Host' : 'Guest');
-  const oppName = opponentName;
-  const nameFontSize = Math.min(cw * 0.032, 15);
-  ctx.font = `bold ${nameFontSize}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.shadowBlur = 0;
-  // Host name (left side)
-  ctx.fillStyle = isHost ? 'rgba(108,99,255,0.9)' : 'rgba(255,255,255,0.35)';
-  ctx.fillText(isHost ? myName : oppName, cw * 0.28, scoreY + scoreSize * 0.72);
-  // Guest name (right side)
-  ctx.fillStyle = !isHost ? 'rgba(255,101,132,0.9)' : 'rgba(255,255,255,0.35)';
-  ctx.fillText(!isHost ? myName : oppName, cw * 0.72, scoreY + scoreSize * 0.72);
-  ctx.textAlign = 'center';
+  // Player name labels — big, glowing, pill background
+  const myName  = (currentPlayer ? currentPlayer.name : (isHost ? 'Host' : 'Guest')).substring(0, 12);
+  const oppName = (opponentName || '???').substring(0, 12);
+  const hostName  = isHost  ? myName  : oppName;
+  const guestName = !isHost ? myName  : oppName;
+  const nameFontSize = Math.min(cw * 0.048, 22);
+  ctx.font = `800 ${nameFontSize}px 'Segoe UI', system-ui, sans-serif`;
+  ctx.textBaseline = 'middle';
+
+  function drawNamePill(name, cx, cy, isMe, baseColor, glowColor) {
+    const metrics = ctx.measureText(name);
+    const tw = metrics.width;
+    const ph = nameFontSize * 1.5, pw = tw + nameFontSize * 1.4;
+    const px = cx - pw / 2, py = cy - ph / 2;
+    // Pill background
+    ctx.save();
+    ctx.globalAlpha = isMe ? 0.28 : 0.12;
+    ctx.fillStyle = baseColor;
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, ph / 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Border
+    ctx.strokeStyle = isMe ? baseColor : 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = isMe ? 1.5 : 1;
+    ctx.globalAlpha = isMe ? 0.7 : 0.25;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Text glow
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = isMe ? 14 : 4;
+    ctx.fillStyle = isMe ? '#ffffff' : 'rgba(255,255,255,0.55)';
+    ctx.textAlign = 'center';
+    ctx.fillText(name, cx, cy);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  const nameY = scoreY + scoreSize * 0.82;
+  drawNamePill(hostName,  cw * 0.28, nameY, isHost,  '#6c63ff', '#9c8fff');
+  drawNamePill(guestName, cw * 0.72, nameY, !isHost, '#ff6584', '#ff99aa');
 
   // HUD: asteroid + box count
   if ((asteroids.length > 0 || surpriseBoxes.length > 0) && countdownVal <= 0) {
