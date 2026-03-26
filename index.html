@@ -632,56 +632,56 @@ const N = {
   C5:523.3, D5:587.3, E5:659.3, F5:698.5, G5:784, A5:880,
 };
 
-// Redonditos de Ricota inspired — rock nacional argentino style
-// Raw distortion, minor keys, driving rhythms, dark energy
+// ═══ REDONDITOS DE RICOTA — Rock Nacional Argentino ═══
+// Each theme has: chord pads, a riff melody, walking bass, AND a rhythm engine
 const THEMES = [
-  // LOBBY: "La Maza" vibe — dark Am, slow & ominous
+  // LOBBY — "La Maza" Am ominous intro
   {
-    name:'La Maza',
-    pad:[N.A2, N.C3, N.E3, N.G3],
-    arp:[N.A3, N.E4, N.A4, N.G4, N.E4, N.C4, N.A3, N.E3],
-    bass:N.A1, tempo:0.95, padVol:0.10, arpVol:0.13, filterF:480, filterQ:5,
-    distort:true
+    name:'La Maza 🎸',
+    chords:[N.A2,N.C3,N.E3], riff:[N.A3,N.E4,N.A4,N.G4,N.E4,N.C4,N.A3,N.G3],
+    bass:[N.A1,N.A1,N.E1,N.G1], bassRhythm:[1,0,0.5,0.5],
+    tempo:0.55, bpm:85, vol:0.12,
+    beatPattern:[1,0,0,0.3, 1,0,0.5,0,  1,0,0,0.3, 1,0.3,0.5,0], // kick,snare pattern
   },
-  // GAME 1: "Jijiji" energy — fast Em pentatonic, driving
+  // GAME 1 — "Jijiji" Em fast punk-rock
   {
-    name:'Jijiji',
-    pad:[N.E2, N.G2, N.B2, N.D3],
-    arp:[N.E4, N.G4, N.A4, N.B4, N.A4, N.G4, N.E4, N.D4],
-    bass:N.E1, tempo:0.38, padVol:0.11, arpVol:0.16, filterF:1200, filterQ:2,
-    distort:true
+    name:'Jijiji 🤘',
+    chords:[N.E2,N.G2,N.B2], riff:[N.E4,N.G4,N.A4,N.B4,N.A4,N.G4,N.E4,N.B3],
+    bass:[N.E1,N.E1,N.B1,N.D2], bassRhythm:[1,0.5,0,0.5],
+    tempo:0.22, bpm:160, vol:0.14,
+    beatPattern:[1,0,0,0, 0.8,0,0,0.4, 1,0,0,0, 0.8,0,0.5,0],
   },
-  // GAME 2: "Nuestro amo juega al escondrijo" — Dm dark groove
+  // GAME 2 — "Nuestro Amo" Dm groove
   {
-    name:'Escondrijo',
-    pad:[N.D2, N.F2, N.A2, N.C3],
-    arp:[N.D4, N.A4, N.F4, N.D4, N.C4, N.A3, N.F3, N.A3],
-    bass:N.D1, tempo:0.48, padVol:0.10, arpVol:0.14, filterF:700, filterQ:4,
-    distort:true
+    name:'Nuestro Amo 🌑',
+    chords:[N.D2,N.F2,N.A2,N.C3], riff:[N.D4,N.F4,N.A4,N.C5,N.A4,N.F4,N.D4,N.C4],
+    bass:[N.D1,N.D1,N.A1,N.C2], bassRhythm:[1,0,0.5,0],
+    tempo:0.35, bpm:110, vol:0.13,
+    beatPattern:[1,0,0,0.5, 0.7,0,0.5,0, 1,0,0,0.5, 0.7,0.3,0,0],
   },
-  // GAME 3: "Pena en las celestial" — Gm bluesy
+  // GAME 3 — "Un Poco de Amor" Gm emotional
   {
-    name:'Pena Celestial',
-    pad:[N.G2, N.A2, N.B2*0.944, N.D3], // Bb=B*0.944
-    arp:[N.G4, N.D4, N.G4, N.A4, N.B4*0.944, N.A4, N.G4, N.D4],
-    bass:N.G1, tempo:0.55, padVol:0.09, arpVol:0.13, filterF:850, filterQ:3,
-    distort:true
+    name:'Amor Cósmico 💜',
+    chords:[N.G2,N.A2*1.059,N.D3], riff:[N.G4,N.D4,N.G4,N.A4*1.059,N.D5,N.A4*1.059,N.G4,N.D4],
+    bass:[N.G1,N.G1,N.D2,N.F2], bassRhythm:[1,0,0.5,0.5],
+    tempo:0.42, bpm:95, vol:0.12,
+    beatPattern:[1,0,0,0.4, 0.8,0,0.4,0, 1,0,0,0.4, 0.8,0.4,0,0.3],
   },
-  // GAME 4: "Superlógico" — fast A minor cumbia-rock
+  // GAME 4 — "Superlógico" Am fast cumbia-rock
   {
-    name:'Superlogico',
-    pad:[N.A2, N.E3, N.A3],
-    arp:[N.A4, N.C5, N.E5, N.A5||N.A4*2, N.E5, N.C5, N.A4, N.E4],
-    bass:N.A1, tempo:0.30, padVol:0.12, arpVol:0.18, filterF:1400, filterQ:2,
-    distort:true
+    name:'Superlógico ⚡',
+    chords:[N.A2,N.E3,N.A3], riff:[N.A4,N.C5,N.E5,N.A5,N.E5,N.C5,N.A4,N.E4],
+    bass:[N.A1,N.A1,N.E1,N.E1], bassRhythm:[1,0.5,1,0.5],
+    tempo:0.18, bpm:175, vol:0.15,
+    beatPattern:[1,0,0.8,0, 1,0,0.8,0.4, 1,0,0.8,0, 1,0.4,0.8,0],
   },
-  // GAME 5: "Un tal Belgrano" — Bm melancholy, mid-tempo
+  // GAME 5 — "Tal Belgrano" Bm melancholy
   {
-    name:'Tal Belgrano',
-    pad:[N.B2, N.D3, N.F3*1.06, N.A3], // F#=F*1.06
-    arp:[N.B3, N.F3*1.06, N.B3, N.D4, N.F4*1.06, N.D4, N.B3, N.A3],
-    bass:N.B1, tempo:0.52, padVol:0.09, arpVol:0.13, filterF:750, filterQ:3.5,
-    distort:true
+    name:'Tal Belgrano 🌒',
+    chords:[N.B2,N.D3,N.F3*1.059,N.A3], riff:[N.B3,N.D4,N.F4*1.059,N.A4,N.F4*1.059,N.D4,N.B3,N.A3],
+    bass:[N.B1,N.B1,N.F1*1.059,N.A1], bassRhythm:[1,0,0.5,0],
+    tempo:0.38, bpm:105, vol:0.12,
+    beatPattern:[1,0,0,0.5, 0.6,0,0.6,0, 1,0,0,0.5, 0.6,0.3,0,0.3],
   }
 ];
 
@@ -803,121 +803,189 @@ function playOsc(freq, type, vol, attack, decay, time) {
   osc.stop(time + attack + decay + 0.05);
 }
 
+// ── Make distortion curve ──
+function makeDistCurve(amount) {
+  const n = 512, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
+}
+
 function playTheme(theme, fadeIn = 2.0) {
   if (!audioCtx) return;
   document.getElementById('musicLabel').textContent = '🎵 ' + theme.name;
   const now = audioCtx.currentTime;
+  const beatSec = 60 / theme.bpm;
 
-  // ── Pad layer: layered detuned oscillators ──
+  // ── Distorted guitar chord pad ──
+  const padGain = audioCtx.createGain();
+  padGain.gain.setValueAtTime(0, now);
+  padGain.gain.linearRampToValueAtTime(theme.vol * 0.55, now + fadeIn);
+  const padDist = audioCtx.createWaveShaper();
+  padDist.curve = makeDistCurve(220);
+  padDist.oversample = '4x';
   const padFilter = audioCtx.createBiquadFilter();
-  padFilter.type  = 'lowpass';
-  padFilter.frequency.value = theme.filterF;
-  padFilter.Q.value = theme.filterQ;
+  padFilter.type = 'lowpass'; padFilter.frequency.value = 1800; padFilter.Q.value = 1.5;
+  padDist.connect(padFilter); padFilter.connect(padGain); padGain.connect(masterGain);
 
-  const padLFO = audioCtx.createOscillator();
-  const padLFOGain = audioCtx.createGain();
-  padLFO.frequency.value = 0.08;
-  padLFOGain.gain.value  = theme.filterF * 0.45;
-  padLFO.connect(padLFOGain);
-  padLFOGain.connect(padFilter.frequency);
-  padLFO.start();
-
-  const padMaster = audioCtx.createGain();
-  padMaster.gain.setValueAtTime(0, now);
-  padMaster.gain.linearRampToValueAtTime(theme.padVol, now + fadeIn);
-  padFilter.connect(padMaster);
-  padMaster.connect(masterGain);
-  addDelay(padMaster, 0.38, 0.28, 0.22);
-
-  // Optional overdrive distortion for rock themes
-  let distNode = null;
-  if (theme.distort) {
-    distNode = audioCtx.createWaveShaper();
-    const k = 180;
-    const n = 256, curve = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = (i * 2) / n - 1;
-      curve[i] = ((Math.PI + k) * x) / (Math.PI + k * Math.abs(x));
-    }
-    distNode.curve = curve;
-    distNode.oversample = '4x';
-    distNode.connect(padFilter);
-  }
-
-  theme.pad.forEach((freq, i) => {
-    const osc = audioCtx.createOscillator();
-    osc.type = theme.distort ? 'sawtooth' : (i % 2 === 0 ? 'sine' : 'triangle');
-    osc.frequency.value = freq;
-    osc.detune.value = (i - theme.pad.length / 2) * (theme.distort ? 12 : 6);
-    osc.connect(theme.distort ? distNode : padFilter);
-    osc.start();
-    activeNodes.push({ osc, gain: padMaster });
+  theme.chords.forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = 'sawtooth'; o.frequency.value = freq;
+    o.detune.value = (i - 1) * 8; // slight spread
+    o.connect(padDist); o.start();
+    activeNodes.push({ osc: o, gain: padGain });
   });
-  activeNodes.push({ osc: padLFO, gain: padMaster });
 
-  // ── Bass drone ──
-  const bassGain   = audioCtx.createGain();
-  const bassFilter = audioCtx.createBiquadFilter();
-  bassFilter.type = 'lowpass'; bassFilter.frequency.value = 180;
+  // ── Walking bass (sawtooth + lowpass = bass guitar) ──
+  const bassGain = audioCtx.createGain();
   bassGain.gain.setValueAtTime(0, now);
-  bassGain.gain.linearRampToValueAtTime(theme.padVol * 0.7, now + fadeIn);
-  bassFilter.connect(bassGain);
-  bassGain.connect(masterGain);
+  bassGain.gain.linearRampToValueAtTime(theme.vol * 0.8, now + fadeIn);
+  const bassFilter = audioCtx.createBiquadFilter();
+  bassFilter.type = 'lowpass'; bassFilter.frequency.value = 300;
+  bassFilter.connect(bassGain); bassGain.connect(masterGain);
+  const bassDist = audioCtx.createWaveShaper();
+  bassDist.curve = makeDistCurve(60);
+  bassDist.connect(bassFilter);
 
-  const bassOsc = audioCtx.createOscillator();
-  bassOsc.type = 'sine';
-  bassOsc.frequency.value = theme.bass;
-  bassOsc.connect(bassFilter);
-  bassOsc.start();
-  activeNodes.push({ osc: bassOsc, gain: bassGain });
+  theme.bass.forEach((freq, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = 'sawtooth'; o.frequency.value = freq;
+    const benv = audioCtx.createGain();
+    const bt = now + fadeIn * 0.5 + i * beatSec * 2;
+    benv.gain.setValueAtTime(0, bt);
+    benv.gain.linearRampToValueAtTime(1, bt + 0.02);
+    benv.gain.exponentialRampToValueAtTime(0.3, bt + beatSec * 1.8);
+    benv.gain.setValueAtTime(0, bt + beatSec * 2);
+    o.connect(benv); benv.connect(bassDist);
+    o.start(bt); o.stop(bt + beatSec * 2 + 0.05);
+  });
 
-  // ── Arpeggio ──
-  startArp(theme, fadeIn * 0.6);
+  // Loop bass pattern
+  startBassLoop(theme, now + fadeIn * 0.5, beatSec);
+
+  // ── Drum machine ──
+  startDrumLoop(theme, now + fadeIn * 0.5, beatSec);
+
+  // ── Melody riff ──
+  startRiffLoop(theme, now + fadeIn * 0.8, beatSec);
+
+  addDelay(padGain, 0.25, 0.18, 0.15);
 }
 
-function startArp(theme, startDelaySec = 0) {
-  let noteIdx = 0;
-  const scheduleNext = () => {
-    if (!audioCtx) return;
-    const freq = theme.arp[noteIdx % theme.arp.length];
-    const now  = audioCtx.currentTime;
-
-    // main note
-    const osc  = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = theme.distort ? 'sawtooth' : 'sine';
-    osc.frequency.value = freq;
-    if (theme.distort) {
-      const d2 = audioCtx.createWaveShaper();
-      const k2 = 80, n2 = 128, c2 = new Float32Array(n2);
-      for (let ii = 0; ii < n2; ii++) {
-        const x = (ii * 2) / n2 - 1;
-        c2[ii] = ((Math.PI + k2) * x) / (Math.PI + k2 * Math.abs(x));
-      }
-      d2.curve = c2;
-      osc.connect(d2); d2.connect(gain);
-    } else {
-      osc.connect(gain);
-    }
-    gain.connect(masterGain);
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(theme.arpVol, now + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + theme.tempo * 0.8);
-    osc.start(now); osc.stop(now + theme.tempo);
-
-    // delay send
-    addDelay(gain, 0.22, 0.18, 0.15);
-
-    // slight upper harmonic
-    playOsc(freq * 2, 'sine', theme.arpVol * 0.25, 0.03, theme.tempo * 0.5, now);
-
-    noteIdx++;
-    const t = setTimeout(scheduleNext, theme.tempo * 1000);
+// ── Bass loop ──
+function startBassLoop(theme, startTime, beatSec) {
+  const loopDur = beatSec * theme.bass.length * 2;
+  const schedLoop = (t0) => {
+    if (!audioCtx || activeNodes.length === 0) return;
+    theme.bass.forEach((freq, i) => {
+      const o = audioCtx.createOscillator();
+      const env = audioCtx.createGain();
+      const dist = audioCtx.createWaveShaper();
+      dist.curve = makeDistCurve(60);
+      const filt = audioCtx.createBiquadFilter();
+      filt.type = 'lowpass'; filt.frequency.value = 280;
+      const bt = t0 + i * beatSec * 2;
+      env.gain.setValueAtTime(0, bt);
+      env.gain.linearRampToValueAtTime(theme.vol * 0.9, bt + 0.015);
+      env.gain.exponentialRampToValueAtTime(0.15, bt + beatSec * 1.6);
+      env.gain.setValueAtTime(0, bt + beatSec * 2 - 0.01);
+      o.type = 'sawtooth'; o.frequency.value = freq;
+      o.connect(env); env.connect(dist); dist.connect(filt); filt.connect(masterGain);
+      o.start(bt); o.stop(bt + beatSec * 2 + 0.05);
+    });
+    const t = setTimeout(() => schedLoop(t0 + loopDur), (loopDur - 0.1) * 1000);
     arpTimers.push(t);
   };
+  const delay = Math.max(0, startTime - audioCtx.currentTime);
+  const tid = setTimeout(() => schedLoop(audioCtx.currentTime), delay * 1000);
+  arpTimers.push(tid);
+}
 
-  const startT = setTimeout(scheduleNext, startDelaySec * 1000);
-  arpTimers.push(startT);
+// ── Drum loop — kick + snare using noise + sine ──
+function startDrumLoop(theme, startTime, beatSec) {
+  const pat = theme.beatPattern; // 16 steps per bar
+  const stepSec = beatSec / 4;
+  const barSec = stepSec * 16;
+
+  const schedBar = (t0) => {
+    if (!audioCtx || activeNodes.length === 0) return;
+    pat.forEach((vel, step) => {
+      if (vel <= 0) return;
+      const t = t0 + step * stepSec;
+      const isKick = step % 4 === 0;
+      if (isKick && vel >= 0.7) {
+        // Kick drum: sine sweep
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.frequency.setValueAtTime(160, t);
+        o.frequency.exponentialRampToValueAtTime(40, t + 0.08);
+        g.gain.setValueAtTime(vel * theme.vol * 1.8, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        o.connect(g); g.connect(masterGain);
+        o.start(t); o.stop(t + 0.2);
+      } else if (vel > 0) {
+        // Snare/hi-hat: noise burst
+        const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.12, audioCtx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let ii = 0; ii < d.length; ii++) d[ii] = (Math.random() * 2 - 1);
+        const src = audioCtx.createBufferSource();
+        const g = audioCtx.createGain();
+        const filt = audioCtx.createBiquadFilter();
+        const isSnare = step % 8 === 4;
+        filt.type = isSnare ? 'bandpass' : 'highpass';
+        filt.frequency.value = isSnare ? 800 : 4000;
+        filt.Q.value = isSnare ? 0.8 : 0.3;
+        g.gain.setValueAtTime(vel * theme.vol * (isSnare ? 1.2 : 0.5), t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + (isSnare ? 0.1 : 0.04));
+        src.buffer = buf;
+        src.connect(filt); filt.connect(g); g.connect(masterGain);
+        src.start(t); src.stop(t + 0.13);
+      }
+    });
+    const tid = setTimeout(() => schedBar(t0 + barSec), (barSec - 0.1) * 1000);
+    arpTimers.push(tid);
+  };
+
+  const delay = Math.max(0, startTime - audioCtx.currentTime);
+  const tid = setTimeout(() => schedBar(audioCtx.currentTime), delay * 1000);
+  arpTimers.push(tid);
+}
+
+// ── Guitar riff loop ──
+function startRiffLoop(theme, startTime, beatSec) {
+  const riff = theme.riff;
+  const noteDur = beatSec * 0.9;
+  const riffDur = beatSec * riff.length;
+  const riffDist = makeDistCurve(280);
+
+  const schedRiff = (t0) => {
+    if (!audioCtx || activeNodes.length === 0) return;
+    riff.forEach((freq, i) => {
+      const t = t0 + i * beatSec;
+      const o = audioCtx.createOscillator();
+      const env = audioCtx.createGain();
+      const dist = audioCtx.createWaveShaper();
+      const filt = audioCtx.createBiquadFilter();
+      dist.curve = riffDist; dist.oversample = '2x';
+      filt.type = 'bandpass'; filt.frequency.value = 2200; filt.Q.value = 1.5;
+      o.type = 'sawtooth'; o.frequency.value = freq;
+      env.gain.setValueAtTime(0, t);
+      env.gain.linearRampToValueAtTime(theme.vol * 0.7, t + 0.012);
+      env.gain.setValueAtTime(theme.vol * 0.5, t + noteDur * 0.7);
+      env.gain.exponentialRampToValueAtTime(0.001, t + noteDur);
+      o.connect(env); env.connect(dist); dist.connect(filt); filt.connect(masterGain);
+      addDelay(filt, 0.18, 0.22, 0.12);
+      o.start(t); o.stop(t + noteDur + 0.05);
+    });
+    const tid = setTimeout(() => schedRiff(t0 + riffDur), (riffDur - 0.1) * 1000);
+    arpTimers.push(tid);
+  };
+
+  const delay = Math.max(0, startTime - audioCtx.currentTime);
+  const tid = setTimeout(() => schedRiff(audioCtx.currentTime), delay * 1000);
+  arpTimers.push(tid);
 }
 
 function startLobbyMusic() {
