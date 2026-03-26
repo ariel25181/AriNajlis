@@ -2227,24 +2227,23 @@ function updatePowerUps() {
 // ═══════════════════════════════════════════════════════
 //  SHOTS
 // ═══════════════════════════════════════════════════════
-function fireShot() {
+function fireShot(forcedWho) {
   if (!gameRunning || countdownVal > 0) return;
-  const who = isHost ? 'host' : 'guest';
+  // forcedWho lets host fire on behalf of guest when guest sends 'fireshot'
+  const who = forcedWho || (isHost ? 'host' : 'guest');
   const pu = powerUp[who];
   if (pu.type !== 'B' || performance.now() > pu.endsAt) return;
 
-  const paddle  = isHost ? hostPaddle : guestPaddle;
-  const dir     = isHost ? 1 : -1;
-  const sx      = paddle.x + (isHost ? paddle.w : 0);
+  const paddle  = who === 'host' ? hostPaddle : guestPaddle;
+  const dir     = who === 'host' ? 1 : -1;
+  const sx      = who === 'host' ? paddle.x + paddle.w : paddle.x;
   const sy      = paddle.y + paddle.h / 2;
   const speed   = canvas.width * 0.018;
   shots.push({ x: sx, y: sy, vx: dir * speed, r: canvas.width * 0.012, owner: who, alive: true });
   sfx('shot'); haptic(25);
 
-  // Tell guest
-  if (isHost) sendToGuest({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
-  else        sendToHost({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
-
+  // Tell the other side
+  sendToGuest({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
   // shots unlimited — no depletion
 }
 
@@ -2449,6 +2448,8 @@ function joinGame() {
   document.getElementById('joiningLabel').textContent = 'Room: ' + rawCode;
   showScreen('joiningScreen'); setConnStatus(false, 'Connecting…');
   initPeer(undefined, () => {
+    // Register voice call handler BEFORE connecting data channel
+    peer.on('call', (call) => answerVoiceCall(call));
     conn = peer.connect('CPONG-' + rawCode, { reliable: false, serialization: 'json', ordered: false });
     setupConn();
   });
@@ -2504,7 +2505,7 @@ function setupConn() {
       case 'rematch_go':  handleRematchGo(); break;
       case 'taunt':   activateTaunt(data.sender); break;
       case 'powerup': activatePowerUp(data.eater, data.boxType); break;
-      case 'fireshot': if (isHost) fireShot(); break;
+      case 'fireshot': if (isHost) fireShot('guest'); break; // fire on guest's behalf
       case 'fraginit':
         if (!isHost) {
           const cw2 = canvas.width;
@@ -2558,9 +2559,19 @@ function startGame(config) {
   showScreen('gameScreen');
   document.body.classList.add('game-active');
   // Init voice on game start (inside user gesture context)
-  if (!aiMode && !localStream) initVoice().then(() => {
-    if (isHost && conn) startVoiceCall(conn.peer);
-  });
+  if (!aiMode) {
+    if (!localStream) {
+      initVoice().then(() => {
+        // Host initiates voice call after a delay to ensure guest has registered their handler
+        if (isHost && conn && conn.open) {
+          setTimeout(() => startVoiceCall(conn.peer), 1200);
+        }
+      });
+    } else if (isHost && conn && conn.open) {
+      // Mic already available — still delay to let guest set up
+      setTimeout(() => startVoiceCall(conn.peer), 1200);
+    }
+  }
   if (isHost) {
     sendToGuest({ type: 'start', config: { score: { ...score }, hostName: currentPlayer ? currentPlayer.name : 'Host' } });
     startCountdown(3);
@@ -2642,14 +2653,15 @@ function onTouchStart(e) {
   const px = touch.clientX, py = touch.clientY;
   if (isTouchOnMyPaddle(px, py)) {
     isDragging = true;
-    // Fire shot if power-up B is active
-    const who = isHost ? 'host' : 'guest';
-    if (powerUp[who].type === 'B' && performance.now() < powerUp[who].endsAt) {
-      if (isHost) fireShot();
-      else { sendToHost({ type: 'fireshot' }); }
-    }
   } else {
     isDragging = false;
+  }
+  // Fire shot if power-up B is active — tap anywhere on OWN half
+  const who = isHost ? 'host' : 'guest';
+  const onMyHalf = isHost ? px < canvas.width * 0.5 : px > canvas.width * 0.5;
+  if (onMyHalf && powerUp[who].type === 'B' && performance.now() < powerUp[who].endsAt) {
+    if (isHost) fireShot('host');
+    else { sendToHost({ type: 'fireshot' }); }
   }
 }
 
@@ -2713,6 +2725,10 @@ function gameLoop(timestamp) {
       if (ball.y - ball.r < 0)              { ball.y = ball.r;                ball.vy =  Math.abs(ball.vy); }
       if (ball.y + ball.r > canvas.height)  { ball.y = canvas.height - ball.r; ball.vy = -Math.abs(ball.vy); }
     }
+    // Decrement shake timer on guest too — otherwise screen shakes forever
+    if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - (1000 / FPS_TARGET));
+    // Advance titillation timer on guest
+    titillateT += dt * 0.18;
   }
   render();
   // Throttle network: send every NET_SEND_EVERY frames
