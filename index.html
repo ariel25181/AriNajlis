@@ -224,7 +224,7 @@
     #musicPrompt span { font-size: 1.4rem; display: block; margin-bottom: 4px; }
 
     /* ── IN-GAME BUTTONS ── */
-    #voiceBtn {
+    #voiceBtn_REMOVED {
       position: fixed; top: 90px; z-index: 400;
       border: 1.5px solid rgba(0,230,118,0.4); border-radius: 50%;
       width: 40px; height: 40px; cursor: pointer;
@@ -233,11 +233,11 @@
       -webkit-tap-highlight-color: transparent;
       transition: background 0.15s, border-color 0.15s;
     }
-    #voiceBtn.host-side  { left: 8px; }
-    #voiceBtn.guest-side { right: 8px; }
-    #voiceBtn.talking    { background: rgba(0,230,118,0.3); border-color: #00e676; }
-    #voiceBtn.muted      { opacity: 0.38; }
-    #voiceBtn:active     { opacity: 0.5; }
+    #voiceBtn_REMOVED.host-side  { left: 8px; }
+    #voiceBtn_REMOVED.guest-side { right: 8px; }
+    #voiceBtn_REMOVED.talking    { background: rgba(0,230,118,0.3); border-color: #00e676; }
+    #voiceBtn_REMOVED.muted      { opacity: 0.38; }
+    #voiceBtn_REMOVED:active     { opacity: 0.5; }
     #musicBtn {
       position: fixed; top: 48px; z-index: 400;
       border: 1px solid rgba(255,255,255,0.2); border-radius: 50%;
@@ -263,11 +263,9 @@
 <body>
 
 <div id="connStatus"><span class="dot" id="connDot"></span><span id="connLabel">–</span></div>
-<div id="musicLabel">🎵 –</div>
-<button id="volBtn" onclick="toggleMute()" title="Toggle music">🔊</button>
-<button id="musicBtn" onclick="toggleGameMusic()" title="Play/Stop music">🎵</button>
-<button id="voiceBtn" title="Tap to toggle mic">🎙️</button>
-<div id="opponentSpeakDot"></div>
+<!-- musicLabel removed -->
+<!-- music removed -->
+<!-- music btn removed -->
 <div id="streakBanner">🔥 ON FIRE! Opponent shrunk!</div>
 <div id="toast"></div>
 <div id="musicPrompt" onclick="tapToStartMusic()" style="display:none">
@@ -385,7 +383,7 @@
            oninput="this.value=this.value.toUpperCase()" />
   </div>
   <button class="btn btn-secondary" onclick="joinGame()">Join Game →</button>
-  <button class="btn btn-secondary" style="max-width:320px;margin-top:8px;opacity:0.7" onclick="toggleLobbyMusic()" id="lobbyMusicBtn">🎵 Stop Music</button>
+  
   <button class="btn btn-secondary" style="max-width:320px;margin-top:4px;opacity:0.6;font-size:0.85rem" onclick="switchPlayerScreen()">← Switch Player</button>
   <p style="color:var(--muted);font-size:0.75rem;margin-top:12px;text-align:center;max-width:280px;">
     First to 10 points wins · Asteroids every 10 hits
@@ -399,7 +397,7 @@
   <p style="font-size:0.8rem;color:var(--muted);margin-bottom:24px;">Tap code to copy · Share with your opponent</p>
   <div class="waiting-text"><span class="pulse-dot"></span>Waiting for opponent…</div>
   <div style="height:24px"></div>
-  <button class="btn btn-secondary" style="max-width:220px;margin-bottom:10px" onclick="toggleLobbyMusic()" id="waitMusicBtn">🎵 Stop Music</button>
+  
   <button class="btn btn-secondary" style="max-width:220px" onclick="cancelHost()">Cancel</button>
 </div>
 
@@ -408,7 +406,7 @@
   <div style="font-size:2rem;margin-bottom:16px;">🔗</div>
   <div class="waiting-text" style="margin-bottom:8px;"><span class="pulse-dot"></span>Connecting to game…</div>
   <p style="color:var(--muted);font-size:0.85rem;margin-bottom:20px;" id="joiningLabel">Room: ??????</p>
-  <button class="btn btn-secondary" style="max-width:220px;margin-bottom:10px" onclick="toggleLobbyMusic()" id="joinMusicBtn">🎵 Stop Music</button>
+  
   <button class="btn btn-secondary" style="max-width:220px" onclick="cancelJoin()">Cancel</button>
 </div>
 
@@ -459,9 +457,9 @@ const WINNING_SCORE        = 10;
 const PADDLE_W             = 14;
 const PADDLE_H_RATIO       = 0.144;   // -20% from 0.18
 const BALL_RADIUS_RATIO    = 0.018;
-const INITIAL_SPEED_RATIO  = 0.008;
-const MAX_SPEED_RATIO      = 0.038;
-const SPEED_INCREMENT      = 1.13;    // +13% per paddle hit — ramps fast
+const INITIAL_SPEED_RATIO  = 0.006;   // comfortable start
+const MAX_SPEED_RATIO      = 0.022;   // cap — never feels out of control
+const SPEED_INCREMENT      = 1.04;    // +4% per hit — steady gradual ramp
 const FPS_TARGET           = 60;
 const MAX_ASTEROIDS        = 3;
 const ASTEROID_HIT_SPAWN   = 10;      // asteroid every 10 hits
@@ -472,7 +470,7 @@ const BOX_DURATION         = 30000;   // 30s power-up duration
 const FRAGMENT_LIFE        = 5000;    // ms fragments survive
 const STREAK_NEEDED        = 3;       // consecutive points for streak bonus
 const SHRINK_DURATION      = 8000;    // ms opponent paddle stays shrunk after streak
-const SHAKE_DURATION       = 350;     // ms screen shake on goal
+const SHAKE_DURATION       = 180;     // ms — short, only on score
 const TRAIL_LENGTH         = 18;      // ball trail frames
 
 // ═══════════════════════════════════════════════════════
@@ -495,7 +493,7 @@ let totalPaddleHits = 0;
 
 // ── Network throttle ──
 let netFrameCount  = 0;   // count frames since last send
-const NET_SEND_EVERY = 2; // send state every N frames (~30fps over network)
+const NET_SEND_EVERY = 3; // send state every 3 frames (~20fps over network) — less CPU
 let lastAsteroidCount = -1; // track when to re-send pts
 let lastBoxCount      = -1;
 // Ball dead-reckoning on guest side
@@ -689,90 +687,18 @@ function initAudio(onReady) {
   if (!audioCtx) {
     audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
     masterGain = audioCtx.createGain();
-    masterGain.gain.value = muted ? 0 : 0.75;
+    masterGain.gain.value = 0.75;
     masterGain.connect(audioCtx.destination);
-
-    // statechange fires when Android finally allows audio to run.
-    // This is the most reliable trigger — works even if resume() was
-    // called slightly outside the gesture window.
-    audioCtx.addEventListener('statechange', () => {
-      if (audioCtx.state === 'running') {
-        hideMusicPrompt();
-        if (activeNodes.length === 0 && !muted) {
-          if (onReady) onReady();
-          else startLobbyMusic();
-        }
-      }
-    });
   }
-
-  // Call resume() synchronously — this is what unlocks iOS Safari.
-  // On Android, the actual start happens via statechange above.
-  if (audioCtx.state === 'running') {
-    hideMusicPrompt();
-    if (onReady) onReady();
-    else if (activeNodes.length === 0 && !muted) startLobbyMusic();
-  } else {
-    audioCtx.resume(); // synchronous call — no .then() needed here
-  }
+  if (audioCtx.state === 'running') { if (onReady) onReady(); }
+  else audioCtx.resume().then(() => { if (onReady) onReady(); });
 }
 
-function toggleMute() {
-  if (!audioCtx) {
-    // First time: init audio, then flip mute state after context is ready
-    initAudio(() => {
-      muted = false;
-      document.getElementById('volBtn').textContent = '🔊';
-      if (masterGain) masterGain.gain.value = 0.75;
-      if (activeNodes.length === 0) startLobbyMusic();
-      showToast('🔊 Music on');
-    });
-    return;
-  }
+function toggleMute() { showToast('Music disabled'); }
 
-  muted = !muted;
-  document.getElementById('volBtn').textContent = muted ? '🔇' : '🔊';
-  updateMusicBtnIcon();
-  const lobbyLabel = muted ? '🔇 Play Music' : '🎵 Stop Music';
-  ['lobbyMusicBtn','waitMusicBtn','joinMusicBtn'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.textContent = lobbyLabel;
-  });
+function applyMuteGain() {}
 
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume().then(() => applyMuteGain());
-  } else {
-    applyMuteGain();
-  }
-
-  if (!muted && activeNodes.length === 0) {
-    if (audioCtx.state === 'running') startLobbyMusic();
-    else audioCtx.resume().then(() => startLobbyMusic());
-  }
-
-  showToast(muted ? '🔇 Music off' : '🔊 Music on');
-}
-
-function applyMuteGain() {
-  if (!masterGain) return;
-  const now = audioCtx.currentTime;
-  masterGain.gain.cancelScheduledValues(now);
-  masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.75, now + 0.3);
-}
-
-function stopAllAudio(fadeTime = 1.5) {
-  arpTimers.forEach(t => clearTimeout(t));
-  arpTimers = [];
-  if (themeTimer) { clearTimeout(themeTimer); themeTimer = null; }
-  const now = audioCtx ? audioCtx.currentTime : 0;
-  activeNodes.forEach(({ osc, gain }) => {
-    try {
-      gain.gain.cancelScheduledValues(now);
-      gain.gain.linearRampToValueAtTime(0, now + fadeTime);
-      setTimeout(() => { try { osc.stop(); } catch(e){} }, (fadeTime + 0.1) * 1000);
-    } catch(e) {}
-  });
-  activeNodes = [];
-}
+function stopAllAudio() { arpTimers.forEach(clearTimeout); arpTimers=[]; }
 
 function addDelay(source, delayTime, feedback, wetGain) {
   const delay = audioCtx.createDelay(1.0);
@@ -804,232 +730,24 @@ function playOsc(freq, type, vol, attack, decay, time) {
 }
 
 // ── Make distortion curve ──
-function makeDistCurve(amount) {
-  const n = 512, curve = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const x = (i * 2) / n - 1;
-    curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
-  }
-  return curve;
-}
+function makeDistCurve() {}
 
-function playTheme(theme, fadeIn = 2.0) {
-  if (!audioCtx) return;
-  document.getElementById('musicLabel').textContent = '🎵 ' + theme.name;
-  const now = audioCtx.currentTime;
-  const beatSec = 60 / theme.bpm;
-
-  // ── Distorted guitar chord pad ──
-  const padGain = audioCtx.createGain();
-  padGain.gain.setValueAtTime(0, now);
-  padGain.gain.linearRampToValueAtTime(theme.vol * 0.55, now + fadeIn);
-  const padDist = audioCtx.createWaveShaper();
-  padDist.curve = makeDistCurve(220);
-  padDist.oversample = '4x';
-  const padFilter = audioCtx.createBiquadFilter();
-  padFilter.type = 'lowpass'; padFilter.frequency.value = 1800; padFilter.Q.value = 1.5;
-  padDist.connect(padFilter); padFilter.connect(padGain); padGain.connect(masterGain);
-
-  theme.chords.forEach((freq, i) => {
-    const o = audioCtx.createOscillator();
-    o.type = 'sawtooth'; o.frequency.value = freq;
-    o.detune.value = (i - 1) * 8; // slight spread
-    o.connect(padDist); o.start();
-    activeNodes.push({ osc: o, gain: padGain });
-  });
-
-  // ── Walking bass (sawtooth + lowpass = bass guitar) ──
-  const bassGain = audioCtx.createGain();
-  bassGain.gain.setValueAtTime(0, now);
-  bassGain.gain.linearRampToValueAtTime(theme.vol * 0.8, now + fadeIn);
-  const bassFilter = audioCtx.createBiquadFilter();
-  bassFilter.type = 'lowpass'; bassFilter.frequency.value = 300;
-  bassFilter.connect(bassGain); bassGain.connect(masterGain);
-  const bassDist = audioCtx.createWaveShaper();
-  bassDist.curve = makeDistCurve(60);
-  bassDist.connect(bassFilter);
-
-  theme.bass.forEach((freq, i) => {
-    const o = audioCtx.createOscillator();
-    o.type = 'sawtooth'; o.frequency.value = freq;
-    const benv = audioCtx.createGain();
-    const bt = now + fadeIn * 0.5 + i * beatSec * 2;
-    benv.gain.setValueAtTime(0, bt);
-    benv.gain.linearRampToValueAtTime(1, bt + 0.02);
-    benv.gain.exponentialRampToValueAtTime(0.3, bt + beatSec * 1.8);
-    benv.gain.setValueAtTime(0, bt + beatSec * 2);
-    o.connect(benv); benv.connect(bassDist);
-    o.start(bt); o.stop(bt + beatSec * 2 + 0.05);
-  });
-
-  // Loop bass pattern
-  startBassLoop(theme, now + fadeIn * 0.5, beatSec);
-
-  // ── Drum machine ──
-  startDrumLoop(theme, now + fadeIn * 0.5, beatSec);
-
-  // ── Melody riff ──
-  startRiffLoop(theme, now + fadeIn * 0.8, beatSec);
-
-  addDelay(padGain, 0.25, 0.18, 0.15);
-}
+function playTheme() {}
 
 // ── Bass loop ──
-function startBassLoop(theme, startTime, beatSec) {
-  const loopDur = beatSec * theme.bass.length * 2;
-  const schedLoop = (t0) => {
-    if (!audioCtx || activeNodes.length === 0) return;
-    theme.bass.forEach((freq, i) => {
-      const o = audioCtx.createOscillator();
-      const env = audioCtx.createGain();
-      const dist = audioCtx.createWaveShaper();
-      dist.curve = makeDistCurve(60);
-      const filt = audioCtx.createBiquadFilter();
-      filt.type = 'lowpass'; filt.frequency.value = 280;
-      const bt = t0 + i * beatSec * 2;
-      env.gain.setValueAtTime(0, bt);
-      env.gain.linearRampToValueAtTime(theme.vol * 0.9, bt + 0.015);
-      env.gain.exponentialRampToValueAtTime(0.15, bt + beatSec * 1.6);
-      env.gain.setValueAtTime(0, bt + beatSec * 2 - 0.01);
-      o.type = 'sawtooth'; o.frequency.value = freq;
-      o.connect(env); env.connect(dist); dist.connect(filt); filt.connect(masterGain);
-      o.start(bt); o.stop(bt + beatSec * 2 + 0.05);
-    });
-    const t = setTimeout(() => schedLoop(t0 + loopDur), (loopDur - 0.1) * 1000);
-    arpTimers.push(t);
-  };
-  const delay = Math.max(0, startTime - audioCtx.currentTime);
-  const tid = setTimeout(() => schedLoop(audioCtx.currentTime), delay * 1000);
-  arpTimers.push(tid);
-}
+function startBassLoop() {}
 
 // ── Drum loop — kick + snare using noise + sine ──
-function startDrumLoop(theme, startTime, beatSec) {
-  const pat = theme.beatPattern; // 16 steps per bar
-  const stepSec = beatSec / 4;
-  const barSec = stepSec * 16;
-
-  const schedBar = (t0) => {
-    if (!audioCtx || activeNodes.length === 0) return;
-    pat.forEach((vel, step) => {
-      if (vel <= 0) return;
-      const t = t0 + step * stepSec;
-      const isKick = step % 4 === 0;
-      if (isKick && vel >= 0.7) {
-        // Kick drum: sine sweep
-        const o = audioCtx.createOscillator();
-        const g = audioCtx.createGain();
-        o.frequency.setValueAtTime(160, t);
-        o.frequency.exponentialRampToValueAtTime(40, t + 0.08);
-        g.gain.setValueAtTime(vel * theme.vol * 1.8, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-        o.connect(g); g.connect(masterGain);
-        o.start(t); o.stop(t + 0.2);
-      } else if (vel > 0) {
-        // Snare/hi-hat: noise burst
-        const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.12, audioCtx.sampleRate);
-        const d = buf.getChannelData(0);
-        for (let ii = 0; ii < d.length; ii++) d[ii] = (Math.random() * 2 - 1);
-        const src = audioCtx.createBufferSource();
-        const g = audioCtx.createGain();
-        const filt = audioCtx.createBiquadFilter();
-        const isSnare = step % 8 === 4;
-        filt.type = isSnare ? 'bandpass' : 'highpass';
-        filt.frequency.value = isSnare ? 800 : 4000;
-        filt.Q.value = isSnare ? 0.8 : 0.3;
-        g.gain.setValueAtTime(vel * theme.vol * (isSnare ? 1.2 : 0.5), t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + (isSnare ? 0.1 : 0.04));
-        src.buffer = buf;
-        src.connect(filt); filt.connect(g); g.connect(masterGain);
-        src.start(t); src.stop(t + 0.13);
-      }
-    });
-    const tid = setTimeout(() => schedBar(t0 + barSec), (barSec - 0.1) * 1000);
-    arpTimers.push(tid);
-  };
-
-  const delay = Math.max(0, startTime - audioCtx.currentTime);
-  const tid = setTimeout(() => schedBar(audioCtx.currentTime), delay * 1000);
-  arpTimers.push(tid);
-}
+function startDrumLoop() {}
 
 // ── Guitar riff loop ──
-function startRiffLoop(theme, startTime, beatSec) {
-  const riff = theme.riff;
-  const noteDur = beatSec * 0.9;
-  const riffDur = beatSec * riff.length;
-  const riffDist = makeDistCurve(280);
+function startRiffLoop() {}
 
-  const schedRiff = (t0) => {
-    if (!audioCtx || activeNodes.length === 0) return;
-    riff.forEach((freq, i) => {
-      const t = t0 + i * beatSec;
-      const o = audioCtx.createOscillator();
-      const env = audioCtx.createGain();
-      const dist = audioCtx.createWaveShaper();
-      const filt = audioCtx.createBiquadFilter();
-      dist.curve = riffDist; dist.oversample = '2x';
-      filt.type = 'bandpass'; filt.frequency.value = 2200; filt.Q.value = 1.5;
-      o.type = 'sawtooth'; o.frequency.value = freq;
-      env.gain.setValueAtTime(0, t);
-      env.gain.linearRampToValueAtTime(theme.vol * 0.7, t + 0.012);
-      env.gain.setValueAtTime(theme.vol * 0.5, t + noteDur * 0.7);
-      env.gain.exponentialRampToValueAtTime(0.001, t + noteDur);
-      o.connect(env); env.connect(dist); dist.connect(filt); filt.connect(masterGain);
-      addDelay(filt, 0.18, 0.22, 0.12);
-      o.start(t); o.stop(t + noteDur + 0.05);
-    });
-    const tid = setTimeout(() => schedRiff(t0 + riffDur), (riffDur - 0.1) * 1000);
-    arpTimers.push(tid);
-  };
+function startLobbyMusic() {}
 
-  const delay = Math.max(0, startTime - audioCtx.currentTime);
-  const tid = setTimeout(() => schedRiff(audioCtx.currentTime), delay * 1000);
-  arpTimers.push(tid);
-}
+function startGameMusic() {}
 
-function startLobbyMusic() {
-  if (!audioCtx) return;
-  const go = () => {
-    stopAllAudio(0.6);
-    setTimeout(() => {
-      if (audioCtx.state === 'running') playTheme(THEMES[0], 2.5);
-    }, 700);
-  };
-  if (audioCtx.state === 'running') go();
-  else audioCtx.resume().then(go).catch(() => {});
-}
-
-function startGameMusic() {
-  if (!audioCtx) return;
-  // Always try resume — on mobile context may be suspended
-  const go = () => {
-    stopAllAudio(0.5);
-    gameThemeIdx = 1;
-    setTimeout(() => {
-      if (audioCtx.state === 'running') {
-        playTheme(THEMES[gameThemeIdx], 1.5);
-        scheduleNextTheme();
-      }
-    }, 600);
-  };
-  if (audioCtx.state === 'running') {
-    go();
-  } else {
-    audioCtx.resume().then(go).catch(() => {});
-  }
-}
-
-function scheduleNextTheme() {
-  themeTimer = setTimeout(() => {
-    stopAllAudio(2.5);
-    gameThemeIdx = 1 + ((gameThemeIdx - 1 + 1) % (THEMES.length - 1));
-    setTimeout(() => {
-      playTheme(THEMES[gameThemeIdx], 2.5);
-      scheduleNextTheme();
-    }, 2600);
-  }, THEME_DURATION_MS);
-}
+function scheduleNextTheme() {}
 
 
 // ═══════════════════════════════════════════════════════
@@ -1047,31 +765,11 @@ function hideTauntBtn() {
   if (btn) btn.style.display = 'none';
   const mb = document.getElementById('musicBtn');
   if (mb) mb.style.display = 'none';
-  hideVoiceBtn();
   document.body.classList.remove('game-active');
-  canvas.style.transform = ''; // always clear shake on exit
+  canvas.style.transform = '';
 }
 
-function toggleLobbyMusic() {
-  if (!audioCtx) { initAudio(); return; }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  muted = !muted;
-  const label = muted ? '🔇 Play Music' : '🎵 Stop Music';
-  // Update all lobby music buttons
-  ['lobbyMusicBtn','waitMusicBtn','joinMusicBtn'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = label;
-  });
-  const volBtn = document.getElementById('volBtn');
-  if (volBtn) volBtn.textContent = muted ? '🔇' : '🔊';
-  if (masterGain) {
-    const now = audioCtx.currentTime;
-    masterGain.gain.cancelScheduledValues(now);
-    masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.75, now + 0.4);
-  }
-  if (!muted && activeNodes.length === 0) startLobbyMusic();
-  showToast(muted ? '🔇 Music off' : '🎵 Music on');
-}
+function toggleLobbyMusic() {}
 
 function updateMusicBtnIcon() {
   const mb = document.getElementById('musicBtn');
@@ -1081,33 +779,7 @@ function updateMusicBtnIcon() {
   mb.style.opacity = muted ? '0.5' : '1';
 }
 
-function toggleGameMusic() {
-  if (!audioCtx) { initAudio(); return; }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  muted = !muted;
-  // Also sync the main vol button
-  const volBtn = document.getElementById('volBtn');
-  if (volBtn) volBtn.textContent = muted ? '🔇' : '🔊';
-  if (muted) {
-    if (masterGain) {
-      const now = audioCtx.currentTime;
-      masterGain.gain.cancelScheduledValues(now);
-      masterGain.gain.linearRampToValueAtTime(0, now + 0.4);
-    }
-  } else {
-    if (masterGain) {
-      const now = audioCtx.currentTime;
-      masterGain.gain.cancelScheduledValues(now);
-      masterGain.gain.linearRampToValueAtTime(0.75, now + 0.4);
-    }
-    if (activeNodes.length === 0) {
-      if (gameRunning) startGameMusic();
-      else startLobbyMusic();
-    }
-  }
-  updateMusicBtnIcon();
-  showToast(muted ? '🔇 Music off' : '🎵 Music on');
-}
+function toggleGameMusic() {}
 
 function fireTaunt() {
   if (tauntActive || !gameRunning || countdownVal > 0) return;
@@ -1781,12 +1453,26 @@ function sfx(type) {
     o.start(now); o.stop(now + 0.42);
 
   } else if (type === 'shot') {
-    const o = audioCtx.createOscillator();
-    o.type = 'square'; o.frequency.value = 600;
-    o.frequency.exponentialRampToValueAtTime(200, now + 0.08);
-    o.connect(g); g.gain.setValueAtTime(0.1, now);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
-    o.start(now); o.stop(now + 0.1);
+    // BLAST — layered noise burst + pitch drop
+    const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.18), audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const noise = audioCtx.createBufferSource();
+    const nFilt = audioCtx.createBiquadFilter();
+    nFilt.type = 'bandpass'; nFilt.frequency.value = 1200; nFilt.Q.value = 0.4;
+    noise.buffer = buf;
+    noise.connect(nFilt); nFilt.connect(g);
+    g.gain.setValueAtTime(0.55, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    noise.start(now);
+    // Low thump underneath
+    const thump = audioCtx.createOscillator();
+    const tg = audioCtx.createGain();
+    thump.type = 'sine'; thump.frequency.setValueAtTime(220, now);
+    thump.frequency.exponentialRampToValueAtTime(40, now + 0.12);
+    tg.gain.setValueAtTime(0.4, now); tg.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+    thump.connect(tg); tg.connect(masterGain);
+    thump.start(now); thump.stop(now + 0.15);
   }
 }
 
@@ -1818,7 +1504,7 @@ function getShakeOffset() {
 //  PARTICLES (goal explosion)
 // ═══════════════════════════════════════════════════════
 function spawnGoalParticles(x, y, color) {
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < 14; i++) {  // reduced for performance
     const ang = (i / 28) * Math.PI * 2 + Math.random() * 0.3;
     const spd = 3 + Math.random() * 6;
     particles.push({
@@ -1834,6 +1520,7 @@ function spawnGoalParticles(x, y, color) {
 }
 
 function updateParticles(dt) {
+  if (particles.length > 40) particles.length = 40; // hard cap
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx * dt; p.y += p.vy * dt;
@@ -1950,139 +1637,28 @@ let voiceAnalyser = null;
 let voiceAnalyserData = null;
 let speakCheckInterval = null;
 
-async function initVoice() {
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: {
-      echoCancellation: true, noiseSuppression: true, autoGainControl: true
-    }});
-    // Mute mic by default — push-to-talk model
-    localStream.getAudioTracks().forEach(t => t.enabled = false);
-    voiceMuted = true;
-    setupVoiceAnalyser(localStream);
-    showToast('🎙️ Mic ready — hold button to talk');
-  } catch(e) {
-    showToast('🎙️ Mic not available');
-    const btn = document.getElementById('voiceBtn');
-    if (btn) btn.style.display = 'none';
-  }
-}
+async function initVoice() {}
 
-function setupVoiceAnalyser(stream) {
-  if (!audioCtx) return;
-  const src = audioCtx.createMediaStreamSource(stream);
-  voiceAnalyser = audioCtx.createAnalyser();
-  voiceAnalyser.fftSize = 256;
-  voiceAnalyserData = new Uint8Array(voiceAnalyser.frequencyBinCount);
-  src.connect(voiceAnalyser);
-}
+function setupVoiceAnalyser() {}
 
-function startVoiceCall(peerId) {
-  if (!peer || !localStream) return;
-  voiceCall = peer.call(peerId, localStream);
-  voiceCall.on('stream', playRemoteStream);
-  voiceCall.on('close', () => { voiceCall = null; });
-}
+function startVoiceCall() {}
 
-function answerVoiceCall(call) {
-  if (!localStream) { initVoice().then(() => call.answer(localStream)); return; }
-  call.answer(localStream);
-  call.on('stream', playRemoteStream);
-  voiceCall = call;
-}
+function answerVoiceCall() {}
 
-function playRemoteStream(stream) {
-  let audio = document.getElementById('remoteAudio');
-  if (!audio) {
-    audio = document.createElement('audio');
-    audio.id = 'remoteAudio'; audio.autoplay = true;
-    document.body.appendChild(audio);
-  }
-  audio.srcObject = stream;
-  // Start monitoring opponent speaking
-  startOpponentSpeakDetect(stream);
-}
+function playRemoteStream() {}
 
-function startOpponentSpeakDetect(stream) {
-  if (!audioCtx) return;
-  const src2 = audioCtx.createMediaStreamSource(stream);
-  const analyser2 = audioCtx.createAnalyser();
-  analyser2.fftSize = 256;
-  const data2 = new Uint8Array(analyser2.frequencyBinCount);
-  src2.connect(analyser2);
-  if (speakCheckInterval) clearInterval(speakCheckInterval);
-  speakCheckInterval = setInterval(() => {
-    analyser2.getByteFrequencyData(data2);
-    const avg = data2.reduce((a, b) => a + b, 0) / data2.length;
-    opponentSpeaking = avg > 12;
-    const dot = document.getElementById('opponentSpeakDot');
-    if (dot) dot.style.display = opponentSpeaking ? 'block' : 'none';
-  }, 80);
-}
+function startOpponentSpeakDetect() {}
 
-function showVoiceBtn() {
-  const btn = document.getElementById('voiceBtn');
-  if (!btn) return;
-  btn.className = isHost ? 'host-side' : 'guest-side';
-  btn.style.display = 'flex';
-  btn.classList.add('muted');
-  // Position opponent speaking dot on opposite side
-  const dot = document.getElementById('opponentSpeakDot');
-  if (dot) {
-    dot.style.top = '91px';
-    dot.style[isHost ? 'left' : 'right'] = '50px';
-  }
-  // Remove any previous listener then add fresh (prevents duplicate on rematch)
-  btn.removeEventListener('click', toggleTalking);
-  btn.addEventListener('click', toggleTalking);
-}
+function showVoiceBtn() {}
 
-function toggleTalking(e) {
-  if (e) e.preventDefault();
-  if (!localStream) {
-    // First tap: request mic permission, then immediately turn it on
-    initVoice().then(() => {
-      if (localStream) {
-        voiceMuted = false;
-        localStream.getAudioTracks().forEach(t => t.enabled = true);
-        const b = document.getElementById('voiceBtn');
-        if (b) { b.classList.remove('muted'); b.classList.add('talking'); }
-        duckMusic(true);
-        showToast('🎙️ Mic on');
-      }
-    });
-    return;
-  }
-  voiceMuted = !voiceMuted;
-  localStream.getAudioTracks().forEach(t => t.enabled = !voiceMuted);
-  const btn = document.getElementById('voiceBtn');
-  if (btn) { btn.classList.toggle('muted', voiceMuted); btn.classList.toggle('talking', !voiceMuted); }
-  duckMusic(!voiceMuted);
-  showToast(voiceMuted ? '🔇 Mic off' : '🎙️ Mic on');
-}
+function toggleTalking() {}
 
-function duckMusic(talking) {
-  if (!masterGain || !audioCtx) return;
-  const now = audioCtx.currentTime;
-  masterGain.gain.cancelScheduledValues(now);
-  if (talking) {
-    // Quickly drop to 15% so voice comes through clearly
-    masterGain.gain.linearRampToValueAtTime(0.12, now + 0.25);
-  } else {
-    // Gently restore to full volume
-    masterGain.gain.linearRampToValueAtTime(muted ? 0 : 0.75, now + 0.5);
-  }
-}
+function duckMusic() {}
 
-function startTalking(e) { if (voiceMuted) toggleTalking(e); }
-function stopTalking(e)  { /* no-op in toggle mode */ }
+function startTalking() {}
+function stopTalking() {}
 
-function hideVoiceBtn() {
-  const btn = document.getElementById('voiceBtn');
-  if (btn) btn.style.display = 'none';
-  const dot = document.getElementById('opponentSpeakDot');
-  if (dot) dot.style.display = 'none';
-  stopTalking(null);
-}
+function hideVoiceBtn() {}
 
 // ═══════════════════════════════════════════════════════
 //  MATCH HISTORY
@@ -2181,17 +1757,21 @@ function updateAsteroids(dt) {
 }
 
 function checkAsteroidBallCollision(b, ast) {
-  const dx   = b.x - ast.x, dy = b.y - ast.y;
+  const dx = b.x - ast.x, dy = b.y - ast.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < b.r + ast.r && dist > 0) {
+  const minDist = b.r + ast.r;
+  if (dist < minDist && dist > 0) {
     const nx = dx / dist, ny = dy / dist;
+    // Only bounce if ball is approaching (dot product negative = moving toward center)
     const dot = b.vx * nx + b.vy * ny;
-    b.vx -= 2 * dot * nx;
-    b.vy -= 2 * dot * ny;
-    // Keep same speed — asteroid hit doesn't slow ball
-    const cur = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-    if (cur > 0) { b.vx = (b.vx / cur) * b.speed; b.vy = (b.vy / cur) * b.speed; }
-    const overlap = b.r + ast.r - dist + 1;
+    if (dot < 0) {
+      b.vx -= 2 * dot * nx;
+      b.vy -= 2 * dot * ny;
+      const cur = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+      if (cur > 0) { b.vx = (b.vx / cur) * b.speed; b.vy = (b.vy / cur) * b.speed; }
+    }
+    // Always push ball outside asteroid surface
+    const overlap = minDist - dist + 2;
     b.x += nx * overlap; b.y += ny * overlap;
     return true;
   }
@@ -2487,7 +2067,6 @@ function createGame() {
   initPeer('CPONG-' + myCode, () => {
     setConnStatus(false, 'Waiting for player…');
     peer.on('connection', (c) => { conn = c; setupConn(); });
-    peer.on('call', (call) => answerVoiceCall(call));
   });
 }
 
@@ -2517,7 +2096,6 @@ function joinGame() {
   showScreen('joiningScreen'); setConnStatus(false, 'Connecting…');
   initPeer(undefined, () => {
     // Register voice call handler BEFORE connecting data channel
-    peer.on('call', (call) => answerVoiceCall(call));
     conn = peer.connect('CPONG-' + rawCode, { reliable: false, serialization: 'json', ordered: false });
     setupConn();
   });
@@ -2626,20 +2204,7 @@ function startGame(config) {
   showVoiceBtn();
   showScreen('gameScreen');
   document.body.classList.add('game-active');
-  // Init voice on game start (inside user gesture context)
-  if (!aiMode) {
-    if (!localStream) {
-      initVoice().then(() => {
-        // Host initiates voice call after a delay to ensure guest has registered their handler
-        if (isHost && conn && conn.open) {
-          setTimeout(() => startVoiceCall(conn.peer), 1200);
-        }
-      });
-    } else if (isHost && conn && conn.open) {
-      // Mic already available — still delay to let guest set up
-      setTimeout(() => startVoiceCall(conn.peer), 1200);
-    }
-  }
+  // Voice chat removed
   if (isHost) {
     sendToGuest({ type: 'start', config: { score: { ...score }, hostName: currentPlayer ? currentPlayer.name : 'Host' } });
     startCountdown(3);
@@ -2719,23 +2284,33 @@ function onTouchStart(e) {
   e.preventDefault();
   const touch = e.touches[0];
   const px = touch.clientX, py = touch.clientY;
-  if (isTouchOnMyPaddle(px, py)) {
-    isDragging = true;
-  } else {
-    isDragging = false;
+  // Start dragging on ANY touch in the paddle zone (own side of screen)
+  const myZoneMaxX = isHost ? canvas.width * 0.5 : canvas.width;
+  const myZoneMinX = isHost ? 0 : canvas.width * 0.5;
+  isDragging = (px >= myZoneMinX && px <= myZoneMaxX);
+  if (isDragging) {
+    // Instantly snap paddle to finger Y for immediate response
+    myTouchY = py / canvas.height;
+    if (!isHost) sendPaddleToHost();
   }
-  // Fire shot if power-up B is active — tap anywhere on OWN half
+  // Fire shot — any tap on own half when power-up B active
   const who = isHost ? 'host' : 'guest';
-  const onMyHalf = isHost ? px < canvas.width * 0.5 : px > canvas.width * 0.5;
-  if (onMyHalf && powerUp[who].type === 'B' && performance.now() < powerUp[who].endsAt) {
-    if (isHost) fireShot('host');
-    else { sendToHost({ type: 'fireshot' }); }
+  const myHalfMinX = isHost ? 0 : canvas.width * 0.5;
+  const myHalfMaxX = isHost ? canvas.width * 0.5 : canvas.width;
+  if (px >= myHalfMinX && px <= myHalfMaxX &&
+      powerUp[who].type === 'B' && performance.now() < powerUp[who].endsAt) {
+    // Fire locally for instant visual feedback on BOTH host and guest
+    fireShot(who);
+    // Also notify the other side to add the shot to their simulation
+    if (isHost) sendToGuest({ type: 'shot', who, sx: (guestPaddle.x)/canvas.width, sy: (guestPaddle.y+guestPaddle.h/2)/canvas.height });
+    else sendToHost({ type: 'fireshot' }); // host re-fires for authoritative physics
   }
 }
 
 function onTouchMove(e) {
   e.preventDefault();
   if (!isDragging) return;
+  // Use clientY directly — no smoothing lag, instant 1:1 response
   myTouchY = e.touches[0].clientY / canvas.height;
   if (!isHost) sendPaddleToHost();
 }
@@ -2795,8 +2370,7 @@ function gameLoop(timestamp) {
     }
     // Decrement shake timer on guest too — otherwise screen shakes forever
     if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - (1000 / FPS_TARGET));
-    // Advance titillation timer on guest
-    titillateT += dt * 0.18;
+    // titillateT advanced in render for guest
   }
   render();
   // Throttle network: send every NET_SEND_EVERY frames
@@ -2811,20 +2385,19 @@ function gameLoop(timestamp) {
 function updateGame(dt) {
   const cw = canvas.width, ch = canvas.height;
 
-  // Host paddle
+  // Host paddle — direct 1:1 with finger, no lag
   if (myTouchY !== null) {
     const ty = myTouchY * ch - hostPaddle.h / 2;
-    hostPaddle.y += (ty - hostPaddle.y) * 0.3 * dt;
+    hostPaddle.y = Math.max(0, Math.min(ch - hostPaddle.h, ty));
   }
-  hostPaddle.y = Math.max(0, Math.min(ch - hostPaddle.h, hostPaddle.y));
 
   // Guest paddle (or AI paddle in AI mode)
   if (aiMode) {
     updateAIPaddle(dt); // AI agent controls this
   } else {
+    // Guest paddle — direct 1:1, no lerp
     const gty = guestPaddleY * ch - guestPaddle.h / 2;
-    guestPaddle.y += (gty - guestPaddle.y) * 0.3 * dt;
-    guestPaddle.y = Math.max(0, Math.min(ch - guestPaddle.h, guestPaddle.y));
+    guestPaddle.y = Math.max(0, Math.min(ch - guestPaddle.h, gty));
   }
 
   // Ball
@@ -2912,7 +2485,7 @@ function awardPoint(scorer) {
   const goalY = canvas.height / 2;
   const iMyGoal = scorer === (isHost ? 'host' : 'guest');
   spawnGoalParticles(goalX, goalY, iMyGoal ? '#00e676' : '#ff6584');
-  triggerShake(iMyGoal ? 14 : 8);
+  if (iMyGoal) triggerShake(6); // tiny shake only when YOU score
   if (iMyGoal) {
     sfx('goal'); haptic([60, 30, 60]);
     if (aiMode) runCommentatorAgent('goal_human', `Score ${score.host}-${score.guest}`);
@@ -3047,11 +2620,15 @@ function receiveState(data) {
       shots[i].x = s.x*cw; shots[i].y = s.y*ch; shots[i].owner = s.o;
     });
   }
-  // Power-ups
-  if (data.puH) { powerUp.host.type  = data.puH.t; powerUp.host.endsAt  = now + data.puH.r; }
-  else          { powerUp.host.type  = null; }
-  if (data.puG) { powerUp.guest.type = data.puG.t; powerUp.guest.endsAt = now + data.puG.r; }
-  else          { powerUp.guest.type = null; }
+  // Power-ups — only update when data is present; expiry handled locally by updatePowerUps()
+  if (data.puH !== undefined) {
+    if (data.puH) { powerUp.host.type  = data.puH.t; powerUp.host.endsAt  = now + data.puH.r; }
+    else          { powerUp.host.type  = null; }
+  }
+  if (data.puG !== undefined) {
+    if (data.puG) { powerUp.guest.type = data.puG.t; powerUp.guest.endsAt = now + data.puG.r; }
+    else          { powerUp.guest.type = null; }
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3088,8 +2665,7 @@ function showGameOver(iWon) {
   document.getElementById('rematchBtn').disabled = false;
   recordResult(iWon);
   saveMatchHistory(iWon);
-  triggerShake(iWon ? 18 : 6);
-  if (iWon) { sfx('goal'); sfx('goal'); haptic([100,50,100,50,200]); }
+  if (iWon) { haptic([100,50,100,50,200]); }
   showScreen('gameOverScreen');
 }
 
@@ -3128,6 +2704,7 @@ let twinkleT = 0;
 function render() {
   const cw = canvas.width, ch = canvas.height;
   ctx.clearRect(0, 0, cw, ch);
+  titillateT += 0.18; // always advance regardless of host/guest
 
   // Screen shake via CSS transform (safe — never shifts drawing origin)
   const sh = getShakeOffset();
@@ -3147,6 +2724,26 @@ function render() {
 
   // Nebula glow in background
   drawNebula(cw, ch);
+
+  // Paddle drag zones — wide dark bands, comfortable for finger
+  const zoneW = Math.max(cw * 0.14, 52); // 14% of width, min 52px
+  // Gradient fade from dark to transparent so it doesn't hard-cut the game
+  const zL = ctx.createLinearGradient(0, 0, zoneW, 0);
+  zL.addColorStop(0, 'rgba(0,0,0,0.55)');
+  zL.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = zL;
+  ctx.fillRect(0, 0, zoneW, ch);
+  const zR = ctx.createLinearGradient(cw - zoneW, 0, cw, 0);
+  zR.addColorStop(0, 'rgba(0,0,0,0)');
+  zR.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = zR;
+  ctx.fillRect(cw - zoneW, 0, zoneW, ch);
+  // Finger guide dots
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  for (let y = ch*0.25; y < ch*0.85; y += ch*0.12) {
+    ctx.beginPath(); ctx.arc(zoneW*0.35, y, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cw - zoneW*0.35, y, 3, 0, Math.PI*2); ctx.fill();
+  }
 
   // Center dashed line
   ctx.setLineDash([12, 14]);
@@ -3457,39 +3054,12 @@ setConnStatus(false, '–');
 // Start on player screen
 showScreen('playerScreen');
 
-// ── Pre-create AudioContext immediately on page load ──
-// It will be 'suspended' on mobile, but creating it now means the
-// statechange listener is already attached when the gesture comes in.
-audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
-masterGain = audioCtx.createGain();
-masterGain.gain.value = muted ? 0 : 0.75;
-masterGain.connect(audioCtx.destination);
-
-// statechange: fires automatically when browser decides context can run.
-// On Android Chrome this fires the moment ANY gesture is detected on page.
-audioCtx.addEventListener('statechange', () => {
-  if (audioCtx.state === 'running' && activeNodes.length === 0 && !muted) {
-    hideMusicPrompt();
-    startLobbyMusic();
-  }
-});
-
-// Also try resume() on every possible user interaction type.
-// Using capture:true so we get it before any other handler.
-// touchstart is best for mobile — fires immediately on finger contact.
+// Audio context created on first user interaction (for SFX only)
 function tryResumeAudio() {
-  if (!audioCtx || audioCtx.state === 'running') return;
-  audioCtx.resume(); // synchronous call satisfies iOS Safari gesture requirement
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
-document.addEventListener('touchstart',  tryResumeAudio, { capture: true, passive: true });
-document.addEventListener('pointerdown', tryResumeAudio, { capture: true, passive: true });
-document.addEventListener('mousedown',   tryResumeAudio, { capture: true, passive: true });
-document.addEventListener('keydown',     tryResumeAudio, { capture: true });
-
-// Show "tap anywhere" hint only if audio doesn't auto-start within 800ms
-setTimeout(() => {
-  if (audioCtx && audioCtx.state !== 'running') showMusicPrompt();
-}, 800);
+document.addEventListener('touchstart', tryResumeAudio, { capture: true, passive: true });
+document.addEventListener('mousedown',  tryResumeAudio, { capture: true, passive: true });
 
 // ── Restore waiting screen when user returns to tab/app ──
 // If they swiped away mid-wait, coming back shows the correct screen
