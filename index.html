@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Cosmic Pong 🌌</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -338,9 +342,10 @@
     <div class="auth-box">
       <h3>Login</h3>
       <input class="auth-input" id="loginPlayerName" placeholder="Your name…" maxlength="20" />
-      <button class="btn btn-primary" style="margin-bottom:0" onclick="loginPlayer()">Login &amp; Play →</button>
-      <p style="color:var(--muted);font-size:0.72rem;margin-top:10px;text-align:center;line-height:1.5">
-        ⚠️ Players are saved per browser.<br>Same browser = same profile.
+      <button class="btn btn-primary" style="margin-bottom:0" id="loginBtn" onclick="loginPlayer()">Login &amp; Play →</button>
+      <p style="color:var(--muted);font-size:0.72rem;margin-top:10px;text-align:center;line-height:1.5" id="storageNote">
+        🌐 With Firebase configured: works across all browsers.<br>
+        Without it: same browser only.
       </p>
     </div>
   </div>
@@ -429,24 +434,104 @@
 // ═══════════════════════════════════════════════════════
 //  LOCAL STORAGE HELPERS (replaces store for GitHub Pages)
 // ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  FIREBASE CONFIG — replace with your Firebase project values
+//  Get these from: console.firebase.google.com → Project Settings → Web App
+// ═══════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+
+let db = null;
+let firebaseReady = false;
+
+function initFirebase() {
+  try {
+    if (FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
+      console.warn('Firebase not configured — using localStorage fallback');
+      return;
+    }
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    // Sign in anonymously so Firestore rules allow read/write
+    firebase.auth().signInAnonymously().then(() => {
+      firebaseReady = true;
+      console.log('✅ Firebase connected');
+    }).catch(e => console.warn('Firebase auth failed:', e));
+  } catch(e) {
+    console.warn('Firebase init failed:', e);
+  }
+}
+initFirebase();
+
+// ── Hybrid store: Firebase (cross-browser) + localStorage (offline fallback) ──
 const store = {
-  get(key) {
-    try { const v = localStorage.getItem(key); return v ? { value: v } : null; }
-    catch(e) { console.warn('localStorage unavailable:', e); return null; }
+  // localStorage fallback always maintained in parallel
+  _ls: {
+    get(key) { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch(e) { return null; } },
+    set(key, v) { try { localStorage.setItem(key, typeof v==='string'?v:JSON.stringify(v)); } catch(e) {} },
+    list(prefix) {
+      try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i); if (k && k.startsWith(prefix)) keys.push(k);
+        }
+        return { keys };
+      } catch(e) { return { keys: [] }; }
+    }
   },
+
+  // Sync get — uses localStorage (instant), Firebase updates happen async
+  get(key) { return this._ls.get(key); },
+
+  // Set — writes to localStorage immediately, Firebase async
   set(key, value) {
-    try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); return true; }
-    catch(e) { console.warn('localStorage set failed:', e); return null; }
+    const str = typeof value === 'string' ? value : JSON.stringify(value);
+    this._ls.set(key, str);
+    if (firebaseReady && db) {
+      // Use key as Firestore document ID (replace invalid chars)
+      const docId = key.replace(/[:/]/g, '_');
+      db.collection('cosmicpong').doc(docId).set({ key, value: str, ts: Date.now() })
+        .catch(e => console.warn('Firebase set failed:', e));
+    }
+    return true;
   },
-  list(prefix) {
+
+  list(prefix) { return this._ls.list(prefix); },
+
+  // Fetch from Firebase and update localStorage (call when loading player data)
+  async syncFromFirebase(key) {
+    if (!firebaseReady || !db) return null;
     try {
-      const keys = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith(prefix)) keys.push(k);
+      const docId = key.replace(/[:/]/g, '_');
+      const doc = await db.collection('cosmicpong').doc(docId).get();
+      if (doc.exists) {
+        const { value } = doc.data();
+        this._ls.set(key, value);
+        return { value };
       }
+    } catch(e) { console.warn('Firebase sync failed:', e); }
+    return null;
+  },
+
+  // Fetch all keys with prefix from Firebase
+  async listFromFirebase(prefix) {
+    if (!firebaseReady || !db) return this._ls.list(prefix);
+    try {
+      const snap = await db.collection('cosmicpong')
+        .where('key', '>=', prefix)
+        .where('key', '<', prefix + '')
+        .get();
+      const keys = snap.docs.map(d => d.data().key);
+      // Update localStorage with all fetched docs
+      snap.docs.forEach(d => { const { key, value } = d.data(); this._ls.set(key, value); });
       return { keys };
-    } catch(e) { return { keys: [] }; }
+    } catch(e) { return this._ls.list(prefix); }
   }
 };
 
@@ -457,8 +542,8 @@ const WINNING_SCORE        = 10;
 const PADDLE_W             = 14;
 const PADDLE_H_RATIO       = 0.144;   // -20% from 0.18
 const BALL_RADIUS_RATIO    = 0.018;
-const INITIAL_SPEED_RATIO  = 0.006;   // comfortable start
-const MAX_SPEED_RATIO      = 0.022;   // cap — never feels out of control
+const INITIAL_SPEED_RATIO  = 0.0075;  // slightly faster start
+const MAX_SPEED_RATIO      = 0.026;   // cap — still controllable
 const SPEED_INCREMENT      = 1.04;    // +4% per hit — steady gradual ramp
 const FPS_TARGET           = 60;
 const MAX_ASTEROIDS        = 3;
@@ -905,11 +990,12 @@ function switchTab(tab) {
   if (tab === 'history') loadHistory();
 }
 
-function loadHof() {
+async function loadHof() {
   const el = document.getElementById('hofList');
   el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Loading…</div>';
   try {
-    const res = store.list('player:');
+    // Use Firebase for global leaderboard if available
+    const res = firebaseReady ? await store.listFromFirebase('player:') : store.list('player:');
     const keys = res && res.keys ? res.keys : [];
     if (!keys.length) {
       el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No players yet. Be the first!</div>';
@@ -941,30 +1027,32 @@ function loadHof() {
   }
 }
 
-function createPlayer() {
+async function createPlayer() {
   const name = document.getElementById('newPlayerName').value.trim();
   if (!name) { showToast('Enter a name!'); return; }
   const key = 'player:' + name.toLowerCase();
-  try {
-    // Check if exists
-    let existing = null;
-    try { existing = store.get(key); } catch(e) {}
-    if (existing) { showToast('Name taken! Try another or Login.'); return; }
-    const player = { name, createdAt: Date.now(), won: 0, lost: 0, played: 0 };
-    store.set(key, JSON.stringify(player), true);
-    setCurrentPlayer(player);
-  } catch(e) { showToast('Storage error — playing as guest'); setCurrentPlayer({ name, createdAt: Date.now(), won:0,lost:0,played:0 }); }
+  let existing = store.get(key);
+  if (!existing && firebaseReady) existing = await store.syncFromFirebase(key);
+  if (existing) { showToast('❌ Name taken! Try Login or pick another.'); return; }
+  const player = { name, createdAt: Date.now(), won: 0, lost: 0, played: 0 };
+  store.set(key, JSON.stringify(player));
+  showToast('✅ Player created!');
+  setCurrentPlayer(player);
 }
 
-function loginPlayer() {
+async function loginPlayer() {
   const name = document.getElementById('loginPlayerName').value.trim();
   if (!name) { showToast('Enter your name!'); return; }
+  const btn = document.getElementById('loginBtn');
+  if (btn) btn.disabled = true;
+  showToast('🔍 Looking up player…');
   const key = 'player:' + name.toLowerCase();
-  try {
-    const res = store.get(key);
-    if (!res) { showToast('Player not found. Create one first!'); return; }
-    setCurrentPlayer(JSON.parse(res.value));
-  } catch(e) { showToast('Not found — create a new player!'); }
+  let res = store.get(key);
+  if (!res && firebaseReady) res = await store.syncFromFirebase(key);
+  if (btn) btn.disabled = false;
+  if (!res) { showToast('❌ Player not found. Create one first!'); return; }
+  try { setCurrentPlayer(JSON.parse(res.value)); showToast('✅ Welcome back!'); }
+  catch(e) { showToast('❌ Error loading player.'); }
 }
 
 function setCurrentPlayer(player) {
@@ -1682,7 +1770,7 @@ function saveMatchHistory(iWon) {
   try { store.set(key, JSON.stringify(history)); } catch(e){}
 }
 
-function loadHistory() {
+async function loadHistory() {
   const el = document.getElementById('historyList');
   if (!currentPlayer) {
     el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Login to see your history</div>';
@@ -1691,7 +1779,8 @@ function loadHistory() {
   el.innerHTML = '<div style="color:var(--muted);padding:16px;text-align:center">Loading…</div>';
   try {
     const key = 'history:' + currentPlayer.name.toLowerCase();
-    const res = store.get(key);
+    let res = store.get(key);
+    if (!res && firebaseReady) res = await store.syncFromFirebase(key);
     const history = res ? JSON.parse(res.value) : [];
     if (!history.length) {
       el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No matches yet!</div>';
@@ -2192,7 +2281,13 @@ function startGame(config) {
   ballTrail.length = 0;
   streak.host = 0; streak.guest = 0;
   rematchPending = false;
-  if (isHost && !aiMode) opponentName = '???'; // AI mode sets opponentName before startGame
+  // Save received guest name before reset (myname message arrives before startGame is called)
+  const savedOpponent = opponentName;
+  if (isHost && !aiMode) opponentName = 'Guest'; // will be updated by myname msg
+  // Restore if we already received the name
+  if (isHost && !aiMode && savedOpponent && savedOpponent !== '???' && savedOpponent !== 'Guest') {
+    opponentName = savedOpponent;
+  }
   totalPaddleHits = 0;
   powerUp.host  = { type: null, endsAt: 0 };
   powerUp.guest = { type: null, endsAt: 0 };
@@ -2216,6 +2311,10 @@ function startGame(config) {
 function receiveStartGame(data) {
   if (data.config && data.config.hostName) opponentName = data.config.hostName;
   startGame(data.config);
+  // Re-send our name after game starts to make sure host has it
+  setTimeout(() => {
+    sendToHost({ type: 'myname', name: currentPlayer ? currentPlayer.name : 'Guest' });
+  }, 300);
 }
 
 function initPaddles() {
@@ -2726,7 +2825,7 @@ function render() {
   drawNebula(cw, ch);
 
   // Paddle drag zones — wide dark bands, comfortable for finger
-  const zoneW = Math.max(cw * 0.14, 52); // 14% of width, min 52px
+  const zoneW = Math.max(cw * 0.20, 72); // 20% of width, min 72px — comfortable thumb zone
   // Gradient fade from dark to transparent so it doesn't hard-cut the game
   const zL = ctx.createLinearGradient(0, 0, zoneW, 0);
   zL.addColorStop(0, 'rgba(0,0,0,0.55)');
@@ -3082,5 +3181,19 @@ window.addEventListener('popstate', () => {
   restoreScreenOnReturn();
 });
 </script>
+
+<script type="module">
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCD0sZsAPtJY1sfXqsPfFnGuIbJd1xDTME",
+  authDomain: "cosmic-pong-ariel.firebaseapp.com",
+  projectId: "cosmic-pong-ariel",
+  storageBucket: "cosmic-pong-ariel.firebasestorage.app",
+  messagingSenderId: "858423074712",
+  appId: "1:858423074712:web:cb5cd54f904040757055ed",
+  measurementId: "G-NNKLTQ8XCY"
+};
+</script>
+  
 </body>
 </html>
