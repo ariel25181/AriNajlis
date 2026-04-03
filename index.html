@@ -659,10 +659,11 @@ function resizeCanvas() {
   canvas.width  = document.documentElement.clientWidth  || window.innerWidth;
   canvas.height = document.documentElement.clientHeight || window.innerHeight;
   if (!gameRunning) return;
-  hostPaddle.x  = PADDLE_W * 2;
+  const _inset = Math.max(canvas.width * 0.12, 44);
+  hostPaddle.x  = _inset;
   hostPaddle.w  = PADDLE_W;
   hostPaddle.h  = canvas.height * PADDLE_H_RATIO;
-  guestPaddle.x = canvas.width - PADDLE_W * 2 - PADDLE_W;
+  guestPaddle.x = canvas.width - _inset - PADDLE_W;
   guestPaddle.w = PADDLE_W;
   guestPaddle.h = canvas.height * PADDLE_H_RATIO;
   // Reset ball/paddle positions proportionally
@@ -2319,8 +2320,10 @@ function receiveStartGame(data) {
 
 function initPaddles() {
   const cw = canvas.width, ch = canvas.height, ph = ch * PADDLE_H_RATIO;
-  hostPaddle  = { x: PADDLE_W * 2, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
-  guestPaddle = { x: cw - PADDLE_W * 2 - PADDLE_W, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
+  // Push paddles inward — large black zone remains for finger drag
+  const inset = Math.max(cw * 0.12, 44); // 12% from edge
+  hostPaddle  = { x: inset, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
+  guestPaddle = { x: cw - inset - PADDLE_W, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
 }
 
 function resetBall(direction = 1) {
@@ -2866,11 +2869,9 @@ function render() {
     ctx.restore();
   }
 
-  // Paddles (titillate if power-up active)
-  const hostTitil  = powerUp.host.type  ? Math.sin(titillateT * 18) * 4 : 0;
-  const guestTitil = powerUp.guest.type ? Math.sin(titillateT * 18) * 4 : 0;
-  const hp = {...hostPaddle,  y: hostPaddle.y  + hostTitil};
-  const gp = {...guestPaddle, y: guestPaddle.y + guestTitil};
+  // Paddles — no shake/titillation, draw at actual position
+  const hp = hostPaddle;
+  const gp = guestPaddle;
   const puColorMap = { A:['#00e5ff','#00b0ff'], B:['#ffea00','#ff6d00'], C:['#88ccff','#4488ff'], D:['#ff2244','#ff6584'] };
   const hColor = puColorMap[powerUp.host.type]  || ['#6c63ff','#9c5fff'];
   const gColor = puColorMap[powerUp.guest.type] || ['#ff6584','#ff8fa3'];
@@ -2937,8 +2938,8 @@ function render() {
   ctx.shadowBlur = 0;
 
   // Player name labels — big, glowing, pill background
-  const myName  = (currentPlayer ? currentPlayer.name : (isHost ? 'Host' : 'Guest')).substring(0, 12);
-  const oppName = (opponentName || '???').substring(0, 12);
+  const myName  = currentPlayer ? currentPlayer.name : (isHost ? 'Host' : 'Guest');
+  const oppName = opponentName || '???';
   const hostName  = isHost  ? myName  : oppName;
   const guestName = !isHost ? myName  : oppName;
   const nameFontSize = Math.min(cw * 0.048, 22);
@@ -2946,37 +2947,49 @@ function render() {
   ctx.textBaseline = 'middle';
 
   function drawNamePill(name, cx, cy, isMe, baseColor, glowColor) {
-    const metrics = ctx.measureText(name);
-    const tw = metrics.width;
-    const ph = nameFontSize * 1.5, pw = tw + nameFontSize * 1.4;
+    // Auto-scale font so long names always fit in max 44% of screen width
+    const maxPillW = cw * 0.44;
+    let fs = nameFontSize;
+    ctx.font = `800 ${fs}px 'Segoe UI', system-ui, sans-serif`;
+    let tw = ctx.measureText(name).width;
+    const padX = fs * 1.4;
+    if (tw + padX > maxPillW) {
+      fs = fs * (maxPillW - padX) / tw;
+      fs = Math.max(fs, 11);
+      ctx.font = `800 ${fs}px 'Segoe UI', system-ui, sans-serif`;
+      tw = ctx.measureText(name).width;
+    }
+    const ph = fs * 1.6, pw = Math.min(tw + padX, maxPillW);
     const px = cx - pw / 2, py = cy - ph / 2;
-    // Pill background
+
     ctx.save();
-    ctx.globalAlpha = isMe ? 0.28 : 0.12;
+    // Pill background
+    ctx.globalAlpha = isMe ? 0.3 : 0.13;
     ctx.fillStyle = baseColor;
     ctx.beginPath();
     ctx.roundRect(px, py, pw, ph, ph / 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
     // Border
-    ctx.strokeStyle = isMe ? baseColor : 'rgba(255,255,255,0.15)';
+    ctx.globalAlpha = isMe ? 0.75 : 0.28;
+    ctx.strokeStyle = isMe ? baseColor : 'rgba(255,255,255,0.18)';
     ctx.lineWidth = isMe ? 1.5 : 1;
-    ctx.globalAlpha = isMe ? 0.7 : 0.25;
     ctx.stroke();
     ctx.globalAlpha = 1;
-    // Text glow
+    // Text
     ctx.shadowColor = glowColor;
     ctx.shadowBlur = isMe ? 14 : 4;
-    ctx.fillStyle = isMe ? '#ffffff' : 'rgba(255,255,255,0.55)';
+    ctx.fillStyle = isMe ? '#ffffff' : 'rgba(255,255,255,0.6)';
+    ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
     ctx.fillText(name, cx, cy);
     ctx.shadowBlur = 0;
     ctx.restore();
   }
 
-  const nameY = scoreY + scoreSize * 0.82;
-  drawNamePill(hostName,  cw * 0.28, nameY, isHost,  '#6c63ff', '#9c8fff');
-  drawNamePill(guestName, cw * 0.72, nameY, !isHost, '#ff6584', '#ff99aa');
+  // Place names centered over each score, allow full half-width
+  const nameY = scoreY + scoreSize * 0.9;
+  drawNamePill(hostName,  cw * 0.25, nameY, isHost,  '#6c63ff', '#9c8fff');
+  drawNamePill(guestName, cw * 0.75, nameY, !isHost, '#ff6584', '#ff99aa');
 
   // HUD: asteroid + box count
   if ((asteroids.length > 0 || surpriseBoxes.length > 0) && countdownVal <= 0) {
