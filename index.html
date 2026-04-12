@@ -3194,5 +3194,37 @@ window.addEventListener('popstate', () => {
   restoreScreenOnReturn();
 });
 </script>
+
+<script type="module">
+  // 1. Import the specific Auth functions
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCD0sZsAPtJY1sfXqsPfFnGuIbJd1xDTME",
+    authDomain: "cosmic-pong-ariel.firebaseapp.com",
+    projectId: "cosmic-pong-ariel",
+    storageBucket: "cosmic-pong-ariel.firebasestorage.app",
+    messagingSenderId: "858423074712",
+    appId: "1:858423074712:web:cb5cd54f904040757055ed",
+    measurementId: "G-NNKLTQ8XCY"
+  };
+
+  // 2. Initialize
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  // 3. THE MAGIC PART: This actually creates the user
+  signInAnonymously(auth)
+    .then(() => {
+      console.log("✅ Success! You should now see a user in the Firebase Console.");
+      alert("Firebase Connected & User Signed In!");
+    })
+    .catch((error) => {
+      console.error("❌ Firebase Error:", error.code, error.message);
+      alert("Error: " + error.message);
+    });
+</script>
+  
 </body>
 </html>
