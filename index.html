@@ -661,6 +661,56 @@ const TAUNT_FADE = 300;
 const TAUNT_COOL = 6000;
 
 // ═══════════════════════════════════════════════════════
+//  CREATIVE FEATURES — STATE
+// ═══════════════════════════════════════════════════════
+// Gravity wells (black holes)
+let gravityWells          = [];
+let gravityWellFrameTimer = 0;
+const GRAVITY_WELL_INTERVAL = 900;   // frames between spawns (~15s)
+const GRAVITY_WELL_LIFE     = 6000;  // ms each well lives
+const GRAVITY_WELL_MAX      = 2;
+
+// Hit ripples
+let hitRipples = [];   // [{x,y,r,maxR,alpha,color}]
+
+// Rally (combo) counter
+let rallyCount   = 0;
+let rallyDisplay = 0; // smoothly visible value
+
+// Momentum smash tracking
+let prevHostPaddleY  = 0;
+let prevGuestPaddleY = 0;
+let hostPaddleVy     = 0;
+let guestPaddleVy    = 0;
+
+// Charge glow — how long since each paddle last hit the ball
+let chargeFrames = { host: 0, guest: 0 };
+
+// Solar flare
+let solarFlare      = null;  // {x,y,dir,alpha,speed,h}
+let solarFlareFrames = 0;
+const SOLAR_FLARE_INTERVAL = 3600;  // frames (~60s)
+
+// Wall magnet zones
+let magnetZone     = false;
+let magnetFrameCnt = 0;
+let magnetFrameTimer = 0;
+const MAGNET_INTERVAL = 500;   // frames between events
+const MAGNET_DURATION = 240;   // frames active (~4s)
+
+// Last-second slow motion
+let slowMoFactor = 1;
+
+// Meteor shower
+let meteorShower = [];  // [{x,y,vx,vy,len,alpha}]
+
+// Constellation grid off-screen canvas
+let constellCanvas = null, constellCtx = null;
+
+// Space distortion gradient (reused each frame)
+let _distortGrad = null;
+
+// ═══════════════════════════════════════════════════════
 //  CANVAS
 // ═══════════════════════════════════════════════════════
 const canvas = document.getElementById('gameCanvas');
@@ -675,6 +725,7 @@ function resizeCanvas() {
   _zoneGrads  = null;
   _nebulaCache = null;
   starCanvas   = null;
+  constellCanvas = null;  // rebuild constellation grid at new size
   _paddleGradCache.clear();
   scanlinePattern = null;
   if (!gameRunning) return;
@@ -1967,13 +2018,17 @@ function updateBallTrail() {
 
 function drawBallTrail() {
   if (!ballTrail.length) return;
+  // Map ball speed → hue: slow=220(blue) → fast=0(red)
+  const speedRatio = ball.speed ? ball.speed / (canvas.width * MAX_SPEED_RATIO) : 0.3;
+  const hue        = Math.round(220 - Math.min(speedRatio, 1) * 220);
+  const trailColor = `hsl(${hue},85%,68%)`;
   ctx.save();
-  ctx.fillStyle   = '#a0c0ff';
-  ctx.shadowColor = '#6c63ff';
-  ctx.shadowBlur  = 6;
+  ctx.fillStyle   = trailColor;
+  ctx.shadowColor = trailColor;
+  ctx.shadowBlur  = 8;
   for (let i = 0; i < ballTrail.length; i++) {
     const t     = ballTrail[i];
-    const alpha = (i / ballTrail.length) * 0.35;
+    const alpha = (i / ballTrail.length) * 0.38;
     const r     = Math.max(t.r * (i / ballTrail.length) * 0.85, 1);
     ctx.globalAlpha = alpha;
     ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, Math.PI * 2); ctx.fill();
@@ -2797,15 +2852,24 @@ function gameLoop(timestamp) {
   if (!gameRunning) return;
   const rawDt = (timestamp - lastTime) / (1000 / FPS_TARGET);
   lastTime = timestamp;
-  // Cap dt tightly: skip physics on very long frames (tab was hidden etc.)
-  // to avoid the ball teleporting across the screen on resume
   const dt = rawDt > 4 ? 1 : Math.min(rawDt, 2);
+
+  // ── Last-second slow motion: ball within 5% of a scoring edge ──
+  if (countdownVal <= 0 && ball.x !== undefined) {
+    const slowZone = canvas.width * 0.052;
+    const nearGoal = ball.x < slowZone || ball.x > canvas.width - slowZone;
+    if (nearGoal) slowMoFactor = Math.max(0.28, slowMoFactor - 0.08);
+    else          slowMoFactor = Math.min(1,    slowMoFactor + 0.06);
+  } else {
+    slowMoFactor = 1;
+  }
+  const effectiveDt = dt * slowMoFactor;
   if (isHost && countdownVal <= 0 && !tauntActive) {
-    updateGame(dt);
+    updateGame(effectiveDt);
   } else if (!isHost && countdownVal <= 0 && !tauntActive) {
     // Guest: dead-reckon ball between network frames to reduce visual stutter
-    ball.x += ball.vx * dt;
-    ball.y += ball.vy * dt;
+    ball.x += ball.vx * effectiveDt;
+    ball.y += ball.vy * effectiveDt;
     // Wall bounce prediction
     if (ball.r > 0) {
       if (ball.y - ball.r < 0)              { ball.y = ball.r;                ball.vy =  Math.abs(ball.vy); }
@@ -2839,12 +2903,15 @@ function updateGame(dt) {
   }
 
   // Host paddle — direct 1:1 with finger, no lag
+  prevHostPaddleY = hostPaddle.y;
   if (myTouchY !== null) {
     const ty = myTouchY * ch - hostPaddle.h / 2;
     hostPaddle.y = Math.max(0, Math.min(ch - hostPaddle.h, ty));
   }
+  hostPaddleVy = hostPaddle.y - prevHostPaddleY;
 
   // Guest paddle (or AI paddle in AI mode)
+  prevGuestPaddleY = guestPaddle.y;
   if (aiMode) {
     updateAIPaddle(dt); // AI agent controls this
   } else {
@@ -2852,6 +2919,7 @@ function updateGame(dt) {
     const gty = guestPaddleY * ch - guestPaddle.h / 2;
     guestPaddle.y = Math.max(0, Math.min(ch - guestPaddle.h, gty));
   }
+  guestPaddleVy = guestPaddle.y - prevGuestPaddleY;
 
   // Ball
   ball.x += ball.vx * dt;
@@ -2906,6 +2974,42 @@ function updateGame(dt) {
   // Titillation timer
   titillateT += dt * 0.18;
 
+  // ── Creative feature updates ──
+  // Charge timer: both paddles charge up each frame (capped at 300)
+  chargeFrames.host  = Math.min(chargeFrames.host  + 1, 300);
+  chargeFrames.guest = Math.min(chargeFrames.guest + 1, 300);
+
+  // Gravity wells
+  gravityWellFrameTimer++;
+  if (gravityWellFrameTimer >= GRAVITY_WELL_INTERVAL) {
+    gravityWellFrameTimer = 0;
+    if (Math.random() < 0.65) spawnGravityWell();
+  }
+  updateGravityWells(dt);
+
+  // Hit ripples
+  updateHitRipples(dt);
+
+  // Solar flare
+  updateSolarFlare(dt);
+
+  // Meteor shower
+  updateMeteors(dt);
+
+  // Wall magnet zones
+  magnetFrameTimer++;
+  if (!magnetZone && magnetFrameTimer >= MAGNET_INTERVAL) {
+    magnetZone = true; magnetFrameCnt = 0; magnetFrameTimer = 0;
+    showToast('🧲 Magnetic walls!');
+  }
+  if (magnetZone) {
+    magnetFrameCnt++;
+    // Gently pull ball toward nearest wall edge zone
+    if (ball.y < ch * 0.11)      ball.vy += 0.12 * dt;
+    else if (ball.y > ch * 0.89) ball.vy -= 0.12 * dt;
+    if (magnetFrameCnt >= MAGNET_DURATION) { magnetZone = false; magnetFrameCnt = 0; }
+  }
+
   // Scoring
   if (ball.x < 0)  awardPoint('guest');
   if (ball.x > cw) awardPoint('host');
@@ -2919,12 +3023,39 @@ function checkPaddleCollision(b, paddle, dir) {
     const relHit  = (b.y - (paddle.y + paddle.h / 2)) / (paddle.h / 2);
     const maxAng  = 65 * (Math.PI / 180);
     const ang     = relHit * maxAng;
-    const newSpd  = Math.min(b.speed * SPEED_INCREMENT, canvas.width * MAX_SPEED_RATIO);
+    let   newSpd  = Math.min(b.speed * SPEED_INCREMENT, canvas.width * MAX_SPEED_RATIO);
+
+    // ── Momentum Smash: paddle moving INTO ball at contact ──
+    const paddleVy   = dir === 1 ? hostPaddleVy : guestPaddleVy;
+    const smashPower = Math.abs(paddleVy) * 0.3; // paddle velocity contribution
+    if (smashPower > 0.8) {
+      newSpd = Math.min(newSpd * (1 + smashPower * 0.04), canvas.width * MAX_SPEED_RATIO * 1.35);
+      // Quick screen flash hint
+      ctx.save(); ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore();
+    }
+
     b.vx   = Math.cos(ang) * newSpd * dir;
     b.vy   = Math.sin(ang) * newSpd;
     b.speed= newSpd;
     b.x    = dir === 1 ? paddle.x + paddle.w + b.r + 1 : paddle.x - b.r - 1;
     sfx('hit'); haptic(18);
+
+    // ── Hit ripple ──
+    const hitWho  = dir === 1 ? 'host' : 'guest';
+    const rippleX = dir === 1 ? paddle.x + paddle.w : paddle.x;
+    const rippleC = dir === 1 ? '#6c63ff' : '#ff6584';
+    spawnHitRipple(rippleX, b.y, rippleC);
+
+    // ── Rally counter ──
+    rallyCount++;
+
+    // ── Charge: reset the hitting paddle's charge ──
+    chargeFrames[hitWho] = 0;
+    // Charge the OTHER paddle builds up by not being credited
+    chargeFrames[hitWho === 'host' ? 'guest' : 'host'] =
+      Math.min(chargeFrames[hitWho === 'host' ? 'guest' : 'host'] + 2, 300);
+
     return true;
   }
   return false;
@@ -2938,6 +3069,8 @@ function awardPoint(scorer) {
   const goalY = canvas.height / 2;
   const iMyGoal = scorer === (isHost ? 'host' : 'guest');
   spawnGoalParticles(goalX, goalY, iMyGoal ? '#00e676' : '#ff6584');
+  spawnMeteorShower();   // meteor shower between every rally
+  rallyCount = 0;        // reset rally counter on point
   if (isHost) {
     const scorerName = scorer === 'host' ? (currentPlayer?.name||'Host') : (opponentName||'Guest');
     saveHighlight(scorerName + ' scores! ' + (score.host + (scorer==='host'?1:0)) + '–' + (score.guest + (scorer==='guest'?1:0)));
@@ -3214,8 +3347,17 @@ function render(timestamp) {
   // Stars
   drawStars(cw, ch);
 
-  // Nebula glow in background
+  // Constellation grid (faint navigation chart built from stars)
+  drawConstellation(cw, ch);
+
+  // Nebula glow (intensifies with score lead)
   drawNebula(cw, ch);
+
+  // Meteor shower — diagonal streaks between rallies
+  drawMeteors();
+
+  // Wall magnet zone glow
+  drawMagnetZones(cw, ch);
 
   // Paddle drag zones — cached gradients, rebuilt only on resize/zone-width change
   const zoneW = Math.max(cw * 0.20, 72);
@@ -3239,12 +3381,14 @@ function render(timestamp) {
     ctx.beginPath(); ctx.arc(cw - zoneW*0.35, y, 3, 0, Math.PI*2); ctx.fill();
   }
 
-  // Center dashed line
-  ctx.setLineDash([12, 14]);
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(cw/2, 0); ctx.lineTo(cw/2, ch); ctx.stroke();
-  ctx.setLineDash([]);
+  // Solar flare beam
+  drawSolarFlare();
+
+  // Wormhole animated center line (replaces plain dashed line)
+  drawWormhole(cw, ch, timestamp);
+
+  // Gravity wells (black holes)
+  drawGravityWells(timestamp);
 
   // Asteroids
   asteroids.forEach(drawAsteroid);
@@ -3261,13 +3405,13 @@ function render(timestamp) {
     ctx.restore();
   }
 
-  // Paddles — no shake/titillation, draw at actual position
+  // Paddles — pass 'who' so drawPaddle can show charge glow
   const hp = hostPaddle;
   const gp = guestPaddle;
   const hColor = PU_COLOR_MAP[powerUp.host.type]  || ['#6c63ff','#9c5fff'];
   const gColor = PU_COLOR_MAP[powerUp.guest.type] || ['#ff6584','#ff8fa3'];
-  drawPaddle(hp, hColor[0], hColor[1]);
-  drawPaddle(gp, gColor[0], gColor[1]);
+  drawPaddle(hp, hColor[0], hColor[1], 'host');
+  drawPaddle(gp, gColor[0], gColor[1], 'guest');
 
   // Power-up remaining bar
   for (const [who, paddle, color] of [['host',hp,hColor[0]],['guest',gp,gColor[0]]]) {
@@ -3303,14 +3447,23 @@ function render(timestamp) {
   // Fragments
   fragments.forEach(f => drawFragment(f, 1 - (now - f.bornAt) / FRAGMENT_LIFE));
 
-  // Ball trail
+  // Ball trail (speed-colored)
   if (countdownVal <= 0) drawBallTrail();
+
+  // Space distortion field around ball
+  if (countdownVal <= 0) drawSpaceDistortion();
 
   // Ball
   if (countdownVal <= 0 && ball.x !== undefined) drawBall();
 
+  // Hit ripples (on top of ball trail, under particles)
+  drawHitRipples();
+
   // Goal particles
   drawParticles();
+
+  // Rally counter HUD
+  drawRallyCounter(cw, ch);
 
   // Score
   const scoreY = ch * 0.1;
@@ -3412,7 +3565,342 @@ function render(timestamp) {
   drawTaunt(cw, ch);
 }
 
-function drawStars(cw, ch) {
+// ═══════════════════════════════════════════════════════
+//  CREATIVE FEATURES — DRAW & UPDATE
+// ═══════════════════════════════════════════════════════
+
+// ── 1. Constellation Grid ────────────────────────────────
+// Connects nearby stars with faint lines. Built once into an offscreen canvas.
+function drawConstellation(cw, ch) {
+  if (!stars) return;
+  if (!constellCanvas || constellCanvas.width !== cw || constellCanvas.height !== ch) {
+    constellCanvas = document.createElement('canvas');
+    constellCanvas.width = cw; constellCanvas.height = ch;
+    constellCtx = constellCanvas.getContext('2d');
+    constellCtx.strokeStyle = 'rgba(160,160,255,0.07)';
+    constellCtx.lineWidth = 0.8;
+    const thresh = cw * 0.20;
+    for (let i = 0; i < stars.length; i++) {
+      for (let j = i + 1; j < stars.length; j++) {
+        const dx = (stars[i].x - stars[j].x) * cw;
+        const dy = (stars[i].y - stars[j].y) * ch;
+        if (dx*dx + dy*dy < thresh*thresh) {
+          constellCtx.beginPath();
+          constellCtx.moveTo(stars[i].x * cw, stars[i].y * ch);
+          constellCtx.lineTo(stars[j].x * cw, stars[j].y * ch);
+          constellCtx.stroke();
+        }
+      }
+    }
+  }
+  ctx.drawImage(constellCanvas, 0, 0);
+}
+
+// ── 2. Wormhole Centre Line ──────────────────────────────
+function drawWormhole(cw, ch, timestamp) {
+  const t = timestamp * 0.001;
+  ctx.save();
+  ctx.translate(cw / 2, ch / 2);
+
+  // Animated dashed line
+  ctx.globalAlpha = 0.07 + Math.sin(t * 1.2) * 0.025;
+  ctx.strokeStyle = '#a080ff';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([10, 14]);
+  ctx.lineDashOffset = -(t * 22) % 24;
+  ctx.beginPath(); ctx.moveTo(0, -ch / 2); ctx.lineTo(0, ch / 2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 4 spinning ellipses
+  for (let i = 0; i < 4; i++) {
+    const dir   = i % 2 === 0 ? 1 : -1;
+    const angle = t * 0.55 * dir + i * Math.PI / 4;
+    const rx    = Math.min(cw * 0.016, 9) * (1 + i * 0.5);
+    const ry    = Math.min(ch * 0.05,  26) * (1 + i * 0.28);
+    const yOff  = Math.sin(t * 0.4 + i * 0.9) * ch * 0.04;
+    ctx.globalAlpha = (0.20 - i * 0.04) * (0.8 + Math.sin(t * 1.8 + i) * 0.2);
+    ctx.strokeStyle = i % 2 === 0 ? '#7c6fff' : '#ff6584';
+    ctx.lineWidth = Math.max(0.5, 1.8 - i * 0.35);
+    ctx.beginPath();
+    ctx.ellipse(0, yOff, rx, ry, angle, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── 3. Space Distortion (ball warps spacetime) ───────────
+function drawSpaceDistortion() {
+  if (!ball.x) return;
+  ctx.save();
+  const r = ball.r * 7;
+  const g = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, r);
+  g.addColorStop(0,   'rgba(0,0,20,0.10)');
+  g.addColorStop(0.4, 'rgba(0,0,10,0.04)');
+  g.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// ── 4. Gravity Wells ─────────────────────────────────────
+function spawnGravityWell() {
+  if (gravityWells.length >= GRAVITY_WELL_MAX) return;
+  const cw = canvas.width, ch = canvas.height;
+  gravityWells.push({
+    x: cw * 0.28 + Math.random() * cw * 0.44,
+    y: ch * 0.12 + Math.random() * ch * 0.76,
+    r: cw * 0.022,
+    mass: cw * 0.000038,
+    spin: 0,
+    bornAt: performance.now()
+  });
+  showToast('🌑 Black Hole spawned!');
+}
+
+function updateGravityWells(dt) {
+  const cw = canvas.width;
+  const now = performance.now();
+  for (let i = gravityWells.length - 1; i >= 0; i--) {
+    const w = gravityWells[i];
+    w.spin += dt * 0.035;
+    if (now - w.bornAt > GRAVITY_WELL_LIFE) { gravityWells.splice(i, 1); continue; }
+    const dx = w.x - ball.x, dy = w.y - ball.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > w.r * 1.2 && dist < cw * 0.4) {
+      const force = w.mass * cw / (dist * dist + 100) * dt;
+      ball.vx += (dx / dist) * force;
+      ball.vy += (dy / dist) * force;
+      const cur = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+      if (cur > ball.speed * 1.08 && cur > 0) {
+        ball.vx = (ball.vx / cur) * ball.speed;
+        ball.vy = (ball.vy / cur) * ball.speed;
+      }
+    }
+  }
+}
+
+function drawGravityWells(timestamp) {
+  const now = performance.now();
+  gravityWells.forEach(w => {
+    const age  = now - w.bornAt;
+    const life = age / GRAVITY_WELL_LIFE;
+    const fadeIn  = Math.min(age / 600, 1);
+    const fadeOut = life > 0.8 ? (1 - life) / 0.2 : 1;
+    const alpha   = fadeIn * fadeOut;
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    // Lensing rings
+    for (let ring = 3; ring >= 0; ring--) {
+      const rr = w.r * (1 + ring * 0.7);
+      const a  = alpha * (0.65 - ring * 0.12);
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.strokeStyle = ring === 0 ? 'rgba(255,255,255,0.9)'
+                      : ring === 1 ? '#bb99ff' : '#7744bb';
+      ctx.lineWidth = ring === 0 ? 2 : 1;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rr, rr * 0.35, w.spin + ring * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Dark singularity
+    ctx.globalAlpha = alpha * 0.92;
+    const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, w.r);
+    cg.addColorStop(0,   'rgba(0,0,0,1)');
+    cg.addColorStop(0.65,'rgba(5,2,18,0.65)');
+    cg.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.arc(0, 0, w.r * 1.3, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  });
+}
+
+// ── 5. Hit Ripples ───────────────────────────────────────
+function spawnHitRipple(x, y, color) {
+  // Keep at most 6 ripples alive
+  if (hitRipples.length >= 6) hitRipples.shift();
+  hitRipples.push({ x, y, r: 5, maxR: canvas.width * 0.09, alpha: 0.85, color });
+}
+
+function updateHitRipples(dt) {
+  for (let i = hitRipples.length - 1; i >= 0; i--) {
+    const r = hitRipples[i];
+    r.r    += (r.maxR - r.r) * 0.10 * dt;
+    r.alpha -= 0.020 * dt;
+    if (r.alpha <= 0) hitRipples.splice(i, 1);
+  }
+}
+
+function drawHitRipples() {
+  if (!hitRipples.length) return;
+  ctx.save();
+  ctx.shadowBlur = 10;
+  hitRipples.forEach(r => {
+    ctx.shadowColor = r.color;
+    for (let i = 0; i < 3; i++) {
+      const ri = r.r * (1 - i * 0.26);
+      if (ri <= 0) continue;
+      ctx.globalAlpha = Math.max(0, r.alpha * (1 - i * 0.32));
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth   = Math.max(0.5, 2 - i * 0.5);
+      ctx.beginPath(); ctx.arc(r.x, r.y, ri, 0, Math.PI * 2); ctx.stroke();
+    }
+  });
+  ctx.shadowBlur  = 0;
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── 6. Solar Flare ───────────────────────────────────────
+function updateSolarFlare(dt) {
+  solarFlareFrames++;
+  if (!solarFlare && solarFlareFrames >= SOLAR_FLARE_INTERVAL) {
+    solarFlareFrames = 0;
+    const dir = Math.random() > 0.5 ? 1 : -1;
+    solarFlare = {
+      x:     dir === 1 ? -30 : canvas.width + 30,
+      y:     canvas.height * (0.18 + Math.random() * 0.64),
+      dir,
+      alpha: 0.95,
+      speed: canvas.width * 0.011,
+      h:     canvas.height * 0.10
+    };
+    showToast('☀️ Solar Flare incoming!');
+  }
+  if (!solarFlare) return;
+  solarFlare.x += solarFlare.dir * solarFlare.speed * dt;
+  // Ball collision: if ball passes through the flare beam
+  if (ball.x !== undefined && Math.abs(ball.y - solarFlare.y) < solarFlare.h) {
+    const flareReach = Math.abs(solarFlare.x - ball.x) < canvas.width * 0.28;
+    if (flareReach) {
+      const maxSpd = canvas.width * MAX_SPEED_RATIO * 1.25;
+      ball.speed   = Math.min(ball.speed * 1.45, maxSpd);
+      const cur    = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+      if (cur > 0) { ball.vx = (ball.vx / cur) * ball.speed; ball.vy = (ball.vy / cur) * ball.speed; }
+      solarFlare = null;
+      showToast('☀️ Solar Flare hit! Speed boost!');
+      return;
+    }
+  }
+  if (solarFlare.x < -80 || solarFlare.x > canvas.width + 80) solarFlare = null;
+}
+
+function drawSolarFlare() {
+  if (!solarFlare) return;
+  ctx.save();
+  const fw = canvas.width * 0.4;
+  const g  = ctx.createLinearGradient(solarFlare.x - fw / 2, 0, solarFlare.x + fw / 2, 0);
+  g.addColorStop(0,   'rgba(255,140,0,0)');
+  g.addColorStop(0.25,`rgba(255,210,40,${solarFlare.alpha * 0.55})`);
+  g.addColorStop(0.5, `rgba(255,255,190,${solarFlare.alpha})`);
+  g.addColorStop(0.75,`rgba(255,210,40,${solarFlare.alpha * 0.55})`);
+  g.addColorStop(1,   'rgba(255,140,0,0)');
+  ctx.fillStyle = g;
+  ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 28;
+  ctx.fillRect(0, solarFlare.y - solarFlare.h / 2, canvas.width, solarFlare.h);
+  // Bright core line
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = `rgba(255,255,255,${solarFlare.alpha * 0.7})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, solarFlare.y);
+  ctx.lineTo(canvas.width, solarFlare.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── 7. Meteor Shower ─────────────────────────────────────
+function spawnMeteorShower() {
+  const cw = canvas.width, ch = canvas.height;
+  for (let i = 0; i < 14; i++) {
+    const ang   = (Math.PI / 2) + (Math.random() - 0.5) * 0.5;
+    const speed = cw * (0.011 + Math.random() * 0.014);
+    meteorShower.push({
+      x:  Math.random() * cw * 1.4 - cw * 0.2,
+      y:  -10 - Math.random() * ch * 0.4,
+      vx: Math.cos(ang - Math.PI / 4) * speed,
+      vy: Math.sin(ang) * speed,
+      len:   20 + Math.random() * 55,
+      alpha: 0.55 + Math.random() * 0.45,
+      speed
+    });
+  }
+}
+
+function updateMeteors(dt) {
+  for (let i = meteorShower.length - 1; i >= 0; i--) {
+    const m = meteorShower[i];
+    m.x += m.vx * dt; m.y += m.vy * dt;
+    m.alpha -= 0.006 * dt;
+    if (m.alpha <= 0 || m.y > canvas.height + 30) meteorShower.splice(i, 1);
+  }
+}
+
+function drawMeteors() {
+  if (!meteorShower.length) return;
+  ctx.save();
+  meteorShower.forEach(m => {
+    ctx.globalAlpha = Math.max(0, m.alpha);
+    const ex = m.x - (m.vx / m.speed) * m.len;
+    const ey = m.y - (m.vy / m.speed) * m.len;
+    const g  = ctx.createLinearGradient(m.x, m.y, ex, ey);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.4,'rgba(200,180,255,0.5)');
+    g.addColorStop(1, 'rgba(100,80,200,0)');
+    ctx.strokeStyle = g;
+    ctx.lineWidth   = 1.5;
+    ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(ex, ey); ctx.stroke();
+  });
+  ctx.shadowBlur  = 0;
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── 8. Rally Counter ─────────────────────────────────────
+function drawRallyCounter(cw, ch) {
+  if (rallyCount < 5) return;   // only show on longer rallies
+  const txt = `RALLY ×${rallyCount}`;
+  const t   = Date.now() * 0.003;
+  const pulse = 0.75 + Math.sin(t * 3) * 0.25;
+  ctx.save();
+  ctx.globalAlpha = Math.min(0.95, (rallyCount - 4) / 8) * pulse;
+  ctx.font = `900 ${Math.min(cw * 0.042, 20)}px 'Segoe UI', sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const hue = Math.min(rallyCount * 8, 60); // blue→yellow as rally grows
+  ctx.fillStyle   = `hsl(${hue},90%,65%)`;
+  ctx.shadowColor = `hsl(${hue},90%,50%)`; ctx.shadowBlur = 14;
+  ctx.fillText(txt, cw / 2, ch * 0.165);
+  ctx.shadowBlur  = 0;
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ── 9. Wall Magnet Edge Glow ─────────────────────────────
+function drawMagnetZones(cw, ch) {
+  if (!magnetZone) return;
+  const pulse = 0.5 + Math.sin(Date.now() * 0.006) * 0.5;
+  ctx.save();
+  // Top edge
+  const gt = ctx.createLinearGradient(0, 0, 0, ch * 0.12);
+  gt.addColorStop(0, `rgba(0,200,255,${0.18 * pulse})`);
+  gt.addColorStop(1, 'rgba(0,200,255,0)');
+  ctx.fillStyle = gt; ctx.fillRect(0, 0, cw, ch * 0.12);
+  // Bottom edge
+  const gb = ctx.createLinearGradient(0, ch, 0, ch * 0.88);
+  gb.addColorStop(0, `rgba(0,200,255,${0.18 * pulse})`);
+  gb.addColorStop(1, 'rgba(0,200,255,0)');
+  ctx.fillStyle = gb; ctx.fillRect(0, ch * 0.88, cw, ch * 0.12);
+  ctx.restore();
+}
+
+// ── 10. Charge Glow helper (per paddle) ──────────────────
+// Called inside drawPaddle — paddleChargeAlpha: 0–1 extra glow intensity
+function getChargeAlpha(who) {
+  const frames = chargeFrames[who];
+  return Math.min(1, Math.max(0, (frames - 60) / 120)); // ramp from 60→180 frames
+}
   twinkleT += 0.008;
   // Rebuild off-screen canvas if canvas was resized
   if (!starCanvas || starCanvas.width !== cw || starCanvas.height !== ch) {
@@ -3447,25 +3935,31 @@ function drawStars(cw, ch) {
 
 function drawNebula(cw, ch) {
   const t = Date.now() * 0.00015;
-  // Only redraw the nebula layer every 6 frames — it changes imperceptibly slowly
+  // Score delta intensifies the leading player's nebula
+  const delta     = Math.max(-5, Math.min(5, score.host - score.guest));
+  const hostBoost = delta >  0 ? delta / 5 : 0;  // host leads → left brighter
+  const guestBoost= delta <  0 ? -delta / 5 : 0; // guest leads → right brighter
+
   if (!_nebulaCache || _nebulaCache.cw !== cw || _nebulaCache.ch !== ch) {
     const nc = document.createElement('canvas');
     nc.width = cw; nc.height = ch;
     _nebulaCache = { canvas: nc, ctx: nc.getContext('2d'), cw, ch };
     _nebulaLastT = -999;
   }
-  if (t - _nebulaLastT > 0.04) { // ~60ms cadence (every ~4 frames at 60fps)
+  if (t - _nebulaLastT > 0.04) {
     _nebulaLastT = t;
     const nc = _nebulaCache.ctx;
     nc.clearRect(0, 0, cw, ch);
-    // Left nebula
+    // Left nebula — purplish, intensifies when host leads
     const g1 = nc.createRadialGradient(cw * 0.15, ch * 0.5, 0, cw * 0.15, ch * 0.5, cw * 0.35);
-    g1.addColorStop(0, `rgba(60,40,140,${0.08 + Math.sin(t) * 0.02})`);
+    const a1  = 0.08 + Math.sin(t) * 0.02 + hostBoost * 0.12;
+    g1.addColorStop(0, `rgba(60,40,140,${a1})`);
     g1.addColorStop(1, 'rgba(0,0,0,0)');
     nc.fillStyle = g1; nc.fillRect(0, 0, cw, ch);
-    // Right nebula
+    // Right nebula — rose/red, intensifies when guest leads
     const g2 = nc.createRadialGradient(cw * 0.85, ch * 0.5, 0, cw * 0.85, ch * 0.5, cw * 0.35);
-    g2.addColorStop(0, `rgba(120,30,80,${0.06 + Math.sin(t + 1) * 0.02})`);
+    const a2  = 0.06 + Math.sin(t + 1) * 0.02 + guestBoost * 0.12;
+    g2.addColorStop(0, `rgba(140,30,80,${a2})`);
     g2.addColorStop(1, 'rgba(0,0,0,0)');
     nc.fillStyle = g2; nc.fillRect(0, 0, cw, ch);
   }
@@ -3534,7 +4028,7 @@ function drawFragment(f, alpha) {
 
 // Paddle gradient cache: key → { grad, y, h }
 const _paddleGradCache = new Map();
-function drawPaddle(p, c1, c2) {
+function drawPaddle(p, c1, c2, who) {
   const key = c1 + c2;
   let entry = _paddleGradCache.get(key);
   if (!entry || entry.y !== p.y || entry.h !== p.h) {
@@ -3543,7 +4037,21 @@ function drawPaddle(p, c1, c2) {
     entry = { grad, y: p.y, h: p.h };
     _paddleGradCache.set(key, entry);
   }
-  ctx.shadowColor = c1; ctx.shadowBlur = 22;
+  // Charge glow — builds up when paddle hasn't hit ball recently
+  const charge = who ? getChargeAlpha(who) : 0;
+  const baseBlur = 22;
+  const chargeBlur = charge * 38;
+  ctx.shadowColor = c1; ctx.shadowBlur = baseBlur + chargeBlur;
+  if (charge > 0.2) {
+    // Add extra outer ring to show charging
+    ctx.save();
+    ctx.globalAlpha = charge * 0.35;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth   = charge * 4;
+    const r = p.w / 2;
+    ctx.beginPath(); ctx.roundRect(p.x - 3, p.y - 3, p.w + 6, p.h + 6, r + 3); ctx.stroke();
+    ctx.restore();
+  }
   ctx.fillStyle = entry.grad;
   const r = p.w / 2;
   ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, r); ctx.fill();
