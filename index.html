@@ -77,7 +77,7 @@
     }
     #toast.show { transform: translateX(-50%) translateY(0); }
     #gameScreen { padding: 0; background: var(--bg); }
-    #gameCanvas { display: block; touch-action: none; }
+    #gameCanvas { display: block; touch-action: none; will-change: transform; }
     .winner-emoji { font-size: 5rem; margin-bottom: 16px; }
     .winner-text { font-size: clamp(1.5rem,6vw,2.5rem); font-weight: 900; margin-bottom: 8px; }
     .final-score { font-size: 1.2rem; color: var(--muted); margin-bottom: 36px; }
@@ -171,28 +171,6 @@
       z-index: 250; display: none; flex-direction: column; align-items: center; gap: 4px;
       pointer-events: none;
     }
-    #commentaryBubble {
-      background: linear-gradient(135deg, rgba(12,8,40,0.95), rgba(30,15,60,0.95));
-      border: 2px solid rgba(150,120,255,0.6);
-      color: #ffffff;
-      font-size: clamp(1rem, 4vw, 1.3rem);
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      padding: 12px 24px;
-      border-radius: 50px;
-      max-width: min(88vw, 400px);
-      text-align: center;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 0 30px rgba(108,99,255,0.5), 0 0 60px rgba(108,99,255,0.2), inset 0 0 20px rgba(108,99,255,0.1);
-      opacity: 0;
-      transform: translateY(10px) scale(0.95);
-      transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.34,1.56,.64,1);
-      text-shadow: 0 0 20px rgba(180,160,255,0.8), 0 2px 4px rgba(0,0,0,0.5);
-    }
-    #commentaryBubble.visible {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
     #agentStatusBar {
       display: flex; gap: 8px; align-items: center;
     }
@@ -278,7 +256,6 @@
 
 <!-- AI AGENT HUD — only visible in AI mode via startAgents() -->
 <div id="agentHud" style="display:none">
-  <div id="commentaryBubble"></div>
   <div id="agentStatusBar" style="display:none">
     <span class="agent-dot" id="dotPaddle"></span>
     <span class="agent-label">AI</span>
@@ -431,944 +408,9 @@
   <button class="btn btn-secondary" onclick="goHome()">Home</button>
 </div>
 
-<!-- REPLAY SCREEN -->
-    <div id="replaySubtitle" style="font-size:0.85rem;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase"></div>
-  </div>
-  <button class="btn btn-secondary" onclick="stopReplay()" style="position:absolute;bottom:28px;left:50%;transform:translateX(-50%);max-width:200px;z-index:10">✕ Close</button>
-</div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-//  LOCAL STORAGE HELPERS (replaces store for GitHub Pages)
-// ═══════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
-//  FIREBASE CONFIG — replace with your Firebase project values
-//  Get these from: console.firebase.google.com → Project Settings → Web App
-// ═══════════════════════════════════════════════════════
-const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyCD0sZsAPtJY1sfXqsPfFnGuIbJd1xDTME",
-  authDomain:        "cosmic-pong-ariel.firebaseapp.com",
-  projectId:         "cosmic-pong-ariel",
-  storageBucket:     "cosmic-pong-ariel.firebasestorage.app",
-  messagingSenderId: "858423074712",
-  appId:             "1:858423074712:web:cb5cd54f904040757055ed"
-};
-
-let db = null;
-let firebaseReady = false;
-
-function initFirebase() {
-  try {
-    if (FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
-      console.warn('Firebase not configured — using localStorage fallback');
-      return;
-    }
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.firestore();
-    // Sign in anonymously so Firestore rules allow read/write
-    firebase.auth().signInAnonymously().then(() => {
-      firebaseReady = true;
-      console.log('✅ Firebase connected');
-    }).catch(e => console.warn('Firebase auth failed:', e));
-  } catch(e) {
-    console.warn('Firebase init failed:', e);
-  }
-}
-initFirebase();
-
-// ── Hybrid store: Firebase (cross-browser) + localStorage (offline fallback) ──
-const store = {
-  // localStorage fallback always maintained in parallel
-  _ls: {
-    get(key) { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch(e) { return null; } },
-    set(key, v) { try { localStorage.setItem(key, typeof v==='string'?v:JSON.stringify(v)); } catch(e) {} },
-    list(prefix) {
-      try {
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i); if (k && k.startsWith(prefix)) keys.push(k);
-        }
-        return { keys };
-      } catch(e) { return { keys: [] }; }
-    }
-  },
-
-  // Sync get — uses localStorage (instant), Firebase updates happen async
-  get(key) { return this._ls.get(key); },
-
-  // Set — writes to localStorage immediately, Firebase async
-  set(key, value) {
-    const str = typeof value === 'string' ? value : JSON.stringify(value);
-    this._ls.set(key, str);
-    if (firebaseReady && db) {
-      // Use key as Firestore document ID (replace invalid chars)
-      const docId = key.replace(/[:/]/g, '_');
-      db.collection('cosmicpong').doc(docId).set({ key, value: str, ts: Date.now() })
-        .catch(e => console.warn('Firebase set failed:', e));
-    }
-    return true;
-  },
-
-  list(prefix) { return this._ls.list(prefix); },
-
-  // Fetch from Firebase and update localStorage (call when loading player data)
-  async syncFromFirebase(key) {
-    if (!firebaseReady || !db) return null;
-    try {
-      const docId = key.replace(/[:/]/g, '_');
-      const doc = await db.collection('cosmicpong').doc(docId).get();
-      if (doc.exists) {
-        const { value } = doc.data();
-        this._ls.set(key, value);
-        return { value };
-      }
-    } catch(e) { console.warn('Firebase sync failed:', e); }
-    return null;
-  },
-
-  // Fetch all keys with prefix from Firebase
-  async listFromFirebase(prefix) {
-    if (!firebaseReady || !db) return this._ls.list(prefix);
-    try {
-      const snap = await db.collection('cosmicpong')
-        .where('key', '>=', prefix)
-        .where('key', '<', prefix + '')
-        .get();
-      const keys = snap.docs.map(d => d.data().key);
-      // Update localStorage with all fetched docs
-      snap.docs.forEach(d => { const { key, value } = d.data(); this._ls.set(key, value); });
-      return { keys };
-    } catch(e) { return this._ls.list(prefix); }
-  }
-};
-
-// ═══════════════════════════════════════════════════════
-//  CONFIG
-// ═══════════════════════════════════════════════════════
-const WINNING_SCORE        = 10;
-const PADDLE_W             = 14;
-const PADDLE_H_RATIO       = 0.144;   // -20% from 0.18
-const BALL_RADIUS_RATIO    = 0.018;
-const INITIAL_SPEED_RATIO  = 0.007;   // comfortable start
-const MAX_SPEED_RATIO      = 0.021;   // smooth cap
-const SPEED_INCREMENT      = 1.032;   // +3.2% per hit — very smooth
-const FPS_TARGET           = 60;
-const MAX_ASTEROIDS        = 2;   // was 3 — fewer = smoother
-const ASTEROID_HIT_SPAWN   = 10;      // asteroid every 10 hits
-const BOX_HIT_SPAWN        = 5;       // surprise box at hit 5,15,25… (halfway)
-const THEME_DURATION_MS    = 60000;
-const BOX_DURATION         = 30000;   // 30s power-up duration
-// Type-B box: unlimited shots for 30s — no count limit
-const FRAGMENT_LIFE        = 3500;    // ms fragments survive (was 5000)
-const STREAK_NEEDED        = 3;       // consecutive points for streak bonus
-const SHRINK_DURATION      = 8000;    // ms opponent paddle stays shrunk after streak
-const SHAKE_DURATION       = 180;     // ms — short, only on score
-const TRAIL_LENGTH         = 18;      // ball trail frames
-
-// ═══════════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════════
-let peer = null, conn = null, isHost = false, myCode = '';
-let frameId = null, lastTime = 0;
-const score = { host: 0, guest: 0 };
-let ball = {}, hostPaddle = {}, guestPaddle = {};
-let guestPaddleY = 0.5;
-let myTouchY = null;
-let isDragging = false;
-let gameRunning = false;
-let countdownVal = 0, countdownTimer = null;
-let asteroids = [];
-let fragments = [];       // asteroid fragments (small, fade out)
-let surpriseBoxes = [];   // power-up boxes
-let shots = [];           // projectiles fired by players
-let totalPaddleHits = 0;
-
-// ── Network throttle ──
-let netFrameCount  = 0;   // count frames since last send
-const NET_SEND_EVERY = 3; // send state every 3 frames (~20fps over network) — less CPU
-let lastAsteroidCount = -1; // track when to re-send pts
-let lastBoxCount      = -1;
-// Ball dead-reckoning on guest side
-let ballInterp = { x: 0, y: 0, vx: 0, vy: 0 }; // last received velocity
-
-// ── Power-up state ──
-// host/guest each have independent power-up tracking
-const powerUp = {
-  host:  { type: null, endsAt: 0 },
-  guest: { type: null, endsAt: 0 }
-};
-// Titillation phase for animated paddle glow
-let titillateT = 0;
-
-// ── Multi-Agent System ──
-let aiMode         = false;       // true when playing vs AI
-let aiDifficulty   = 'easy';      // easy | medium | hard
-let aiPaddleY      = 0.5;         // AI target paddle position (normalized)
-let aiLoopTimer    = null;        // setInterval for AI paddle agent
-let masterLoopTimer= null;        // setInterval for game master agent
-let lastCommentary = 0;           // timestamp of last commentary
-let agentsBusy     = { paddle: false, master: false, comm: false };
-let aiCallCount    = 0;           // total API calls made this game
-const AI_PADDLE_INTERVAL  = 350;  // ms between AI paddle decisions
-const AI_MASTER_INTERVAL  = 8000; // ms between game master decisions
-const AI_COMM_COOLDOWN    = 5000; // ms minimum between commentary lines
-// Commentary queue to show messages one at a time
-let commentaryQueue = [];
-let commentaryShowing = false;
-
-// ── Room persistence ──
-let roomExpireTimer   = null;  // setTimeout that destroys room after 2min
-let roomCountdownInt  = null;  // setInterval that updates the UI countdown
-let roomSecondsLeft   = 0;     // seconds remaining
-
-// ── Streak ──
-const streak = { host: 0, guest: 0 };
-
-// ── Screen shake ──
-let shakeTime = 0, shakeIntensity = 0;
-
-// ── Impact freeze — physics ticks paused while > 0 (Gemini rec #1) ──
-let hitStopFrames = 0;
-
-// ── Ball trail ──
-const ballTrail = []; // {x,y,alpha}
-
-// ── Particles ──
-let particles = []; // goal explosion
-
-// ── Voice chat ──
-let localStream   = null;
-let voiceCall     = null;
-let voiceMuted    = false;
-let opponentSpeaking = false; // analyser-based indicator
-
-let aiLastShotTime = 0;  // timestamp of last AI shot (for cooldown)
-
-// ── Rematch ──
-let rematchPending = false; // host requested rematch, waiting for guest
-
-// ── Shrink curse ──
-const shrinkTimer = { host: null, guest: null };
-
-// ── Taunt state ──
-let tauntActive  = false;
-let tauntAlpha   = 0;
-let tauntSender  = '';
-let tauntPhase   = '';
-let tauntTimer   = null;
-const TAUNT_HOLD = 1400;
-const TAUNT_FADE = 300;
-const TAUNT_COOL = 6000;
-
-// ═══════════════════════════════════════════════════════
-//  CREATIVE FEATURES — STATE
-// ═══════════════════════════════════════════════════════
-// Gravity wells (black holes)
-let gravityWells          = [];
-let gravityWellFrameTimer = 0;
-const GRAVITY_WELL_INTERVAL = 1200;   // frames between spawns (~20s)
-const GRAVITY_WELL_LIFE     = 4500;   // ms each well lives (was 6000)
-const GRAVITY_WELL_MAX      = 1;      // max 1 well at a time (was 2)
-
-// Hit ripples
-let hitRipples = [];   // [{x,y,r,maxR,alpha,color}]
-
-// Rally (combo) counter
-let rallyCount   = 0;
-let rallyDisplay = 0; // smoothly visible value
-
-// Momentum smash tracking
-let prevHostPaddleY  = 0;
-let prevGuestPaddleY = 0;
-let hostPaddleVy     = 0;
-let guestPaddleVy    = 0;
-
-// Charge glow — how long since each paddle last hit the ball
-let chargeFrames = { host: 0, guest: 0 };
-
-// Solar flare
-let solarFlare      = null;  // {x,y,dir,alpha,speed,h}
-let solarFlareFrames = 0;
-const SOLAR_FLARE_INTERVAL = 3600;  // frames (~60s)
-
-// Wall magnet zones
-let magnetZone     = false;
-let magnetFrameCnt = 0;
-let magnetFrameTimer = 0;
-const MAGNET_INTERVAL = 500;   // frames between events
-const MAGNET_DURATION = 240;   // frames active (~4s)
-
-// Last-second slow motion
-let slowMoFactor = 1;
-
-// Meteor shower
-let meteorShower = [];  // [{x,y,vx,vy,len,alpha}]
-
-// Constellation grid off-screen canvas
-let constellCanvas = null, constellCtx = null;
-
-// Space distortion gradient (reused each frame)
-let _distortGrad = null;
-
-// ═══════════════════════════════════════════════════════
-//  CANVAS
-// ═══════════════════════════════════════════════════════
-const canvas = document.getElementById('gameCanvas');
-const ctx    = canvas.getContext('2d');
-
-function resizeCanvas() {
-  // Use documentElement dimensions to handle tablet/iOS correctly
-  canvas.width  = document.documentElement.clientWidth  || window.innerWidth;
-  canvas.height = document.documentElement.clientHeight || window.innerHeight;
-  // Invalidate cached gradients and offscreen canvases so they rebuild at new size
-  _bgGradSize = { w: 0, h: 0 };
-  _zoneGrads  = null;
-  _nebulaCache = null;
-  starCanvas   = null;
-  constellCanvas = null;  // rebuild constellation grid at new size
-  _paddleGradCache.clear();
-  scanlinePattern = null;
-  if (!gameRunning) return;
-  const _inset = Math.max(canvas.width * 0.19, 58);  // finger-gap: 19% from edge
-  hostPaddle.x  = _inset;
-  hostPaddle.w  = PADDLE_W;
-  hostPaddle.h  = canvas.height * PADDLE_H_RATIO;
-  guestPaddle.x = canvas.width - _inset - PADDLE_W;
-  guestPaddle.w = PADDLE_W;
-  guestPaddle.h = canvas.height * PADDLE_H_RATIO;
-  // Reset ball/paddle positions proportionally
-  if (hostPaddle.y !== undefined) {
-    hostPaddle.y  = Math.max(0, Math.min(canvas.height - hostPaddle.h,  hostPaddle.y));
-    guestPaddle.y = Math.max(0, Math.min(canvas.height - guestPaddle.h, guestPaddle.y));
-  }
-}
-window.addEventListener('resize', resizeCanvas);
-window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 300));
-
-// ═══════════════════════════════════════════════════════
-//  SCREEN HELPERS
-// ═══════════════════════════════════════════════════════
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  // Ensure music is playing on lobby/player screens
-  if ((id === 'lobbyScreen' || id === 'playerScreen' || id === 'waitingScreen' || id === 'joiningScreen') 
-      && audioCtx && audioCtx.state === 'running' && activeNodes.length === 0 && !muted) {
-    startLobbyMusic();
-  }
-}
-function setConnStatus(connected, label) {
-  document.getElementById('connDot').className = 'dot' + (connected ? ' connected' : '');
-  document.getElementById('connLabel').textContent = label;
-}
-function showToast(msg, duration = 2000) {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), duration);
-}
-
-// ═══════════════════════════════════════════════════════
-//  AUDIO ENGINE  (Web Audio API — space ambient)
-// ═══════════════════════════════════════════════════════
-let audioCtx = null, masterGain = null;
-let muted = false;
-let activeNodes = [];
-let arpTimers = [];
-let themeTimer = null;
-let gameThemeIdx = 0;
-
-// Frequency table
-const N = {
-  C1:32.7, D1:36.7, E1:41.2, F1:43.7, G1:49.0, A1:55.0, B1:61.7,
-  C2:65.4, D2:73.4, E2:82.4, F2:87.3, G2:98.0, A2:110, B2:123.5,
-  C3:130.8, D3:146.8, E3:164.8, F3:174.6, G3:196, A3:220, B3:246.9,
-  C4:261.6, D4:293.7, E4:329.6, F4:349.2, G4:392, A4:440, B4:493.9,
-  C5:523.3, D5:587.3, E5:659.3, F5:698.5, G5:784, A5:880,
-};
-
-// ═══ REDONDITOS DE RICOTA — Rock Nacional Argentino ═══
-// Each theme has: chord pads, a riff melody, walking bass, AND a rhythm engine
-const THEMES = [
-  // LOBBY — "La Maza" Am ominous intro
-  {
-    name:'La Maza 🎸',
-    chords:[N.A2,N.C3,N.E3], riff:[N.A3,N.E4,N.A4,N.G4,N.E4,N.C4,N.A3,N.G3],
-    bass:[N.A1,N.A1,N.E1,N.G1], bassRhythm:[1,0,0.5,0.5],
-    tempo:0.55, bpm:85, vol:0.12,
-    beatPattern:[1,0,0,0.3, 1,0,0.5,0,  1,0,0,0.3, 1,0.3,0.5,0], // kick,snare pattern
-  },
-  // GAME 1 — "Jijiji" Em fast punk-rock
-  {
-    name:'Jijiji 🤘',
-    chords:[N.E2,N.G2,N.B2], riff:[N.E4,N.G4,N.A4,N.B4,N.A4,N.G4,N.E4,N.B3],
-    bass:[N.E1,N.E1,N.B1,N.D2], bassRhythm:[1,0.5,0,0.5],
-    tempo:0.22, bpm:160, vol:0.14,
-    beatPattern:[1,0,0,0, 0.8,0,0,0.4, 1,0,0,0, 0.8,0,0.5,0],
-  },
-  // GAME 2 — "Nuestro Amo" Dm groove
-  {
-    name:'Nuestro Amo 🌑',
-    chords:[N.D2,N.F2,N.A2,N.C3], riff:[N.D4,N.F4,N.A4,N.C5,N.A4,N.F4,N.D4,N.C4],
-    bass:[N.D1,N.D1,N.A1,N.C2], bassRhythm:[1,0,0.5,0],
-    tempo:0.35, bpm:110, vol:0.13,
-    beatPattern:[1,0,0,0.5, 0.7,0,0.5,0, 1,0,0,0.5, 0.7,0.3,0,0],
-  },
-  // GAME 3 — "Un Poco de Amor" Gm emotional
-  {
-    name:'Amor Cósmico 💜',
-    chords:[N.G2,N.A2*1.059,N.D3], riff:[N.G4,N.D4,N.G4,N.A4*1.059,N.D5,N.A4*1.059,N.G4,N.D4],
-    bass:[N.G1,N.G1,N.D2,N.F2], bassRhythm:[1,0,0.5,0.5],
-    tempo:0.42, bpm:95, vol:0.12,
-    beatPattern:[1,0,0,0.4, 0.8,0,0.4,0, 1,0,0,0.4, 0.8,0.4,0,0.3],
-  },
-  // GAME 4 — "Superlógico" Am fast cumbia-rock
-  {
-    name:'Superlógico ⚡',
-    chords:[N.A2,N.E3,N.A3], riff:[N.A4,N.C5,N.E5,N.A5,N.E5,N.C5,N.A4,N.E4],
-    bass:[N.A1,N.A1,N.E1,N.E1], bassRhythm:[1,0.5,1,0.5],
-    tempo:0.18, bpm:175, vol:0.15,
-    beatPattern:[1,0,0.8,0, 1,0,0.8,0.4, 1,0,0.8,0, 1,0.4,0.8,0],
-  },
-  // GAME 5 — "Tal Belgrano" Bm melancholy
-  {
-    name:'Tal Belgrano 🌒',
-    chords:[N.B2,N.D3,N.F3*1.059,N.A3], riff:[N.B3,N.D4,N.F4*1.059,N.A4,N.F4*1.059,N.D4,N.B3,N.A3],
-    bass:[N.B1,N.B1,N.F1*1.059,N.A1], bassRhythm:[1,0,0.5,0],
-    tempo:0.38, bpm:105, vol:0.12,
-    beatPattern:[1,0,0,0.5, 0.6,0,0.6,0, 1,0,0,0.5, 0.6,0.3,0,0.3],
-  }
-];
-
-function initAudio(onReady) {
-  if (!audioCtx) {
-    audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
-    masterGain = audioCtx.createGain();
-    masterGain.gain.value = 0.75;
-    masterGain.connect(audioCtx.destination);
-  }
-  if (audioCtx.state === 'running') { if (onReady) onReady(); }
-  else audioCtx.resume().then(() => { if (onReady) onReady(); });
-}
-
-function toggleMute() { showToast('Music disabled'); }
-
-function applyMuteGain() {}
-
-function stopAllAudio() { arpTimers.forEach(clearTimeout); arpTimers=[]; }
-
-function addDelay(source, delayTime, feedback, wetGain) {
-  const delay = audioCtx.createDelay(1.0);
-  const fbGain = audioCtx.createGain();
-  const wGain  = audioCtx.createGain();
-  delay.delayTime.value = delayTime;
-  fbGain.gain.value     = feedback;
-  wGain.gain.value      = wetGain;
-  source.connect(delay);
-  delay.connect(fbGain);
-  fbGain.connect(delay);
-  delay.connect(wGain);
-  wGain.connect(masterGain);
-}
-
-function playOsc(freq, type, vol, attack, decay, time) {
-  if (!audioCtx) return;
-  const osc  = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = type;
-  osc.frequency.value = freq;
-  osc.connect(gain);
-  gain.connect(masterGain);
-  gain.gain.setValueAtTime(0, time);
-  gain.gain.linearRampToValueAtTime(vol, time + attack);
-  gain.gain.exponentialRampToValueAtTime(0.0001, time + attack + decay);
-  osc.start(time);
-  osc.stop(time + attack + decay + 0.05);
-}
-
-// ── Make distortion curve ──
-function makeDistCurve() {}
-
-function playTheme() {}
-
-// ── Bass loop ──
-function startBassLoop() {}
-
-// ── Drum loop — kick + snare using noise + sine ──
-function startDrumLoop() {}
-
-// ── Guitar riff loop ──
-function startRiffLoop() {}
-
-function startLobbyMusic() {}
-
-function startGameMusic() {}
-
-function scheduleNextTheme() {}
-
-
-// ═══════════════════════════════════════════════════════
-//  TAUNT  — "IN YOUR FACE!"
-// ═══════════════════════════════════════════════════════
-function showTauntBtn() {
-  const btn = document.getElementById('tauntBtn');
-  if (btn) { btn.className = isHost ? 'host-side' : 'guest-side'; btn.style.display = 'block'; }
-  const mb = document.getElementById('musicBtn');
-  if (mb) { mb.className = isHost ? 'host-side' : 'guest-side'; mb.style.display = 'flex'; }
-  updateMusicBtnIcon();
-}
-function hideTauntBtn() {
-  const btn = document.getElementById('tauntBtn');
-  if (btn) btn.style.display = 'none';
-  const mb = document.getElementById('musicBtn');
-  if (mb) mb.style.display = 'none';
-  document.body.classList.remove('game-active');
-  canvas.style.transform = '';
-}
-
-function toggleLobbyMusic() {}
-
-function updateMusicBtnIcon() {
-  const mb = document.getElementById('musicBtn');
-  if (!mb) return;
-  mb.textContent = muted ? '🔇' : '🎵';
-  mb.title = muted ? 'Enable music' : 'Stop music';
-  mb.style.opacity = muted ? '0.5' : '1';
-}
-
-function toggleGameMusic() {}
-
-function fireTaunt() {
-  if (tauntActive || !gameRunning || countdownVal > 0) return;
-  const btn = document.getElementById('tauntBtn');
-  btn.classList.add('cooling');
-  setTimeout(() => btn.classList.remove('cooling'), TAUNT_COOL);
-  // Both: host sends to guest, guest sends to host
-  const msg = { type: 'taunt', sender: isHost ? 'host' : 'guest' };
-  if (isHost) sendToGuest(msg); else sendToHost(msg);
-  activateTaunt(isHost ? 'host' : 'guest');
-}
-
-function activateTaunt(sender) {
-  tauntActive = true;
-  tauntSender = sender;
-  tauntAlpha  = 0;
-  tauntPhase  = 'in';
-
-  // Fade IN
-  const fadeInStart = performance.now();
-  const fadeIn = () => {
-    const t = (performance.now() - fadeInStart) / TAUNT_FADE;
-    tauntAlpha = Math.min(t, 1);
-    if (t < 1) { requestAnimationFrame(fadeIn); return; }
-    tauntAlpha = 1;
-    tauntPhase = 'hold';
-    // Hold, then fade out
-    tauntTimer = setTimeout(() => {
-      tauntPhase = 'out';
-      const fadeOutStart = performance.now();
-      const fadeOut = () => {
-        const t2 = (performance.now() - fadeOutStart) / TAUNT_FADE;
-        tauntAlpha = Math.max(1 - t2, 0);
-        if (t2 < 1) { requestAnimationFrame(fadeOut); return; }
-        tauntAlpha  = 0;
-        tauntActive = false;
-        tauntPhase  = '';
-      };
-      requestAnimationFrame(fadeOut);
-    }, TAUNT_HOLD);
-  };
-  requestAnimationFrame(fadeIn);
-}
-
-function drawTaunt(cw, ch) {
-  if (!tauntActive && tauntAlpha <= 0) return;
-
-  // Dark overlay
-  ctx.save();
-  ctx.globalAlpha = tauntAlpha * 0.72;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, cw, ch);
-  ctx.globalAlpha = 1;
-
-  // Glowing background blob
-  const blobAlpha = tauntAlpha * 0.55;
-  const grad = ctx.createRadialGradient(cw/2, ch/2, 0, cw/2, ch/2, cw * 0.55);
-  grad.addColorStop(0, `rgba(255,30,0,${blobAlpha})`);
-  grad.addColorStop(0.5, `rgba(180,10,0,${blobAlpha * 0.6})`);
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, cw, ch);
-
-  // Shake offset when fully visible
-  let shakeX = 0, shakeY = 0;
-  if (tauntPhase === 'hold') {
-    shakeX = (Math.random() - 0.5) * 6 * tauntAlpha;
-    shakeY = (Math.random() - 0.5) * 4 * tauntAlpha;
-  }
-
-  // Main text
-  ctx.globalAlpha = tauntAlpha;
-  const fontSize = Math.min(cw * 0.17, 100);
-  ctx.font = `900 ${fontSize}px 'Arial Black', 'Impact', sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // Outline
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth   = fontSize * 0.12;
-  ctx.lineJoin    = 'round';
-  ctx.strokeText('IN YOUR', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
-  ctx.strokeText('FACE! 😤', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
-
-  // Fill with gradient
-  const tg = ctx.createLinearGradient(0, ch/2 - fontSize, 0, ch/2 + fontSize);
-  tg.addColorStop(0,   '#ffffff');
-  tg.addColorStop(0.3, '#ffdd00');
-  tg.addColorStop(0.7, '#ff6600');
-  tg.addColorStop(1,   '#ff1100');
-  ctx.fillStyle = tg;
-  ctx.shadowColor = '#ff3300';
-  ctx.shadowBlur  = 40 * tauntAlpha;
-  ctx.fillText('IN YOUR', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
-  ctx.fillText('FACE! 😤', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
-  ctx.shadowBlur = 4;
-
-  // Sender label
-  const senderLabel = tauntSender === (isHost ? 'host' : 'guest') ? '¡Tú!' : '¡Ellos!';
-  ctx.font         = `bold ${Math.min(cw * 0.04, 22)}px sans-serif`;
-  ctx.fillStyle    = `rgba(255,255,255,${tauntAlpha * 0.6})`;
-  ctx.shadowBlur   = 0;
-  ctx.fillText(senderLabel, cw/2 + shakeX, ch/2 + fontSize * 1.5 + shakeY);
-
-  ctx.globalAlpha = 1;
-  ctx.restore();
-}
-
-// ═══════════════════════════════════════════════════════
-//  PLAYER SYSTEM
-// ═══════════════════════════════════════════════════════
-let currentPlayer = null;  // { name, createdAt, won, lost }
-let opponentName  = '???'; // received from opponent at game start
-
-function switchTab(tab) {
-  ['new','login','hof','history'].forEach(t => {
-    const el = document.getElementById('tabContent' + t.charAt(0).toUpperCase() + t.slice(1));
-    if (el) el.style.display = t === tab ? '' : 'none';
-    const btn = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
-    if (btn) btn.classList.toggle('active', t === tab);
-  });
-  if (tab === 'hof') loadHof();
-  if (tab === 'history') loadHistory();
-}
-
-async function loadHof() {
-  const el = document.getElementById('hofList');
-  el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Loading…</div>';
-  try {
-    // Use Firebase for global leaderboard if available
-    const res = firebaseReady ? await store.listFromFirebase('player:') : store.list('player:');
-    const keys = res && res.keys ? res.keys : [];
-    if (!keys.length) {
-      el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">No players yet. Be the first!</div>';
-      return;
-    }
-    const players = [];
-    for (const k of keys) {
-      try {
-        const r = store.get(k);
-        if (r) players.push(JSON.parse(r.value));
-      } catch(e) {}
-    }
-    // Sort by wins desc
-    players.sort((a,b) => (b.won||0) - (a.won||0));
-    let html = '<div class="hof-row header"><span>Player</span><span>Created</span><span style="text-align:center">W</span><span style="text-align:center">L</span></div>';
-    players.forEach((p, i) => {
-      const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
-      const date = new Date(p.createdAt).toLocaleDateString();
-      html += `<div class="hof-row entry">
-        <span class="hof-name">${medal}${p.name}</span>
-        <span class="hof-date">${date}</span>
-        <span style="text-align:center;color:#00e676;font-weight:700">${p.won||0}</span>
-        <span style="text-align:center;color:#ff6584;font-weight:700">${p.lost||0}</span>
-      </div>`;
-    });
-    el.innerHTML = html;
-  } catch(e) {
-    el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Could not load.</div>';
-  }
-}
-
-async function createPlayer() {
-  const name = document.getElementById('newPlayerName').value.trim();
-  if (!name) { showToast('Enter a name!'); return; }
-  const key = 'player:' + name.toLowerCase();
-  let existing = store.get(key);
-  if (!existing && firebaseReady) existing = await store.syncFromFirebase(key);
-  if (existing) { showToast('❌ Name taken! Try Login or pick another.'); return; }
-  const player = { name, createdAt: Date.now(), won: 0, lost: 0, played: 0 };
-  store.set(key, JSON.stringify(player));
-  showToast('✅ Player created!');
-  setCurrentPlayer(player);
-}
-
-async function loginPlayer() {
-  const name = document.getElementById('loginPlayerName').value.trim();
-  if (!name) { showToast('Enter your name!'); return; }
-  const btn = document.getElementById('loginBtn');
-  if (btn) btn.disabled = true;
-  showToast('🔍 Looking up player…');
-  const key = 'player:' + name.toLowerCase();
-  let res = store.get(key);
-  if (!res && firebaseReady) res = await store.syncFromFirebase(key);
-  if (btn) btn.disabled = false;
-  if (!res) { showToast('❌ Player not found. Create one first!'); return; }
-  try { setCurrentPlayer(JSON.parse(res.value)); showToast('✅ Welcome back!'); }
-  catch(e) { showToast('❌ Error loading player.'); }
-}
-
-function setCurrentPlayer(player) {
-  currentPlayer = player;
-  const greet = document.getElementById('playerGreeting');
-  if (greet) greet.textContent = '👾 ' + player.name + '  ·  Won: ' + (player.won||0) + '  Lost: ' + (player.lost||0);
-  showScreen('lobbyScreen');
-}
-
-function switchPlayerScreen() {
-  currentPlayer = null;
-  showScreen('playerScreen');
-}
-
-function recordResult(iWon) {
-  if (!currentPlayer) return;
-  currentPlayer.played = (currentPlayer.played||0) + 1;
-  if (iWon) currentPlayer.won = (currentPlayer.won||0) + 1;
-  else       currentPlayer.lost = (currentPlayer.lost||0) + 1;
-  currentPlayer.lastPlayed = Date.now();
-  const key = 'player:' + currentPlayer.name.toLowerCase();
-  // store.set writes to localStorage + Firebase async
-  store.set(key, JSON.stringify(currentPlayer));
-  // Refresh greeting
-  const greet = document.getElementById('playerGreeting');
-  if (greet) greet.textContent = '👾 ' + currentPlayer.name + '  ·  Won: ' + currentPlayer.won + '  Lost: ' + currentPlayer.lost;
-}
-
-
-// ═══════════════════════════════════════════════════════
-//  MULTI-AGENT ORCHESTRATOR
-// ═══════════════════════════════════════════════════════
-
-// ── Shared Claude API call ──
-async function callClaude(systemPrompt, userPrompt, maxTokens = 120) {
-  aiCallCount++;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
-    })
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'API error');
-  return data.content[0]?.text || '';
-}
-
-// ── UI helpers ──
-function setAgentDot(agent, state) {
-  const el = document.getElementById('dot' + agent);
-  if (el) el.className = 'agent-dot ' + state;
-}
-
-function showCommentary(text) {
-  commentaryQueue.push(text);
-  if (!commentaryShowing) drainCommentaryQueue();
-}
-
-function drainCommentaryQueue() {
-  if (commentaryQueue.length === 0) { commentaryShowing = false; return; }
-  commentaryShowing = true;
-  const el = document.getElementById('commentaryBubble');
-  if (!el) { commentaryShowing = false; return; }
-  el.textContent = commentaryQueue.shift();
-  el.classList.add('visible');
-  setTimeout(() => {
-    el.classList.remove('visible');
-    setTimeout(() => drainCommentaryQueue(), 350);
-  }, 3200);
-}
-
-// ── Difficulty parameters ──
-function getAIDiffParams() {
-  return {
-    easy:   { reactionDelay: 0.55, errorRange: 0.18, maxSpeed: 0.012 },
-    medium: { reactionDelay: 0.30, errorRange: 0.08, maxSpeed: 0.020 },
-    hard:   { reactionDelay: 0.08, errorRange: 0.02, maxSpeed: 0.030 }
-  }[aiDifficulty];
-}
-
-// ════════════════════════════════════════════════════════
-//  AGENT 1 — AI PADDLE
-//  Role: Decide where to move the AI opponent paddle
-//  Runs every 350ms. Receives ball trajectory + positions,
-//  returns a normalized Y (0-1) target for the paddle.
-// ════════════════════════════════════════════════════════
-async function runPaddleAgent() {
-  if (!aiMode || !gameRunning || countdownVal > 0 || agentsBusy.paddle) return;
-  agentsBusy.paddle = true;
-  setAgentDot('Paddle', 'thinking');
-
-  const cw = canvas.width, ch = canvas.height;
-  const params = getAIDiffParams();
-
-  // Build compact game state for the prompt
-  const state = {
-    ball: { x: +(ball.x/cw).toFixed(3), y: +(ball.y/ch).toFixed(3),
-            vx: +(ball.vx/cw).toFixed(4), vy: +(ball.vy/ch).toFixed(4) },
-    aiPaddle:    +(guestPaddle.y/ch + (guestPaddle.h/ch/2)).toFixed(3),
-    humanPaddle: +(hostPaddle.y/ch  + (hostPaddle.h/ch/2)).toFixed(3),
-    score:       { ai: score.guest, human: score.host },
-    difficulty:  aiDifficulty
-  };
-
-  const systemPrompt = `You are the AI paddle controller in a Pong game.
-Difficulty: ${aiDifficulty}.
-Rules:
-- Ball goes LEFT (vx<0) = coming toward you (AI=right side)
-- Respond ONLY with a number between 0.0 and 1.0 — target Y position (0=top, 1=bottom)
-- ${aiDifficulty === 'easy' ? 'React slowly, make occasional mistakes, miss sometimes on purpose' : ''}
-- ${aiDifficulty === 'medium' ? 'React moderately, predict ball trajectory, occasional errors' : ''}
-- ${aiDifficulty === 'hard' ? 'Predict exact ball landing point with wall bounces, nearly perfect play' : ''}
-- Add human-like imperfection: reaction delay ${params.reactionDelay}s, positional error ±${params.errorRange}
-- Output ONLY the decimal number, nothing else.`;
-
-  const userPrompt = JSON.stringify(state);
-
-  try {
-    const raw = await callClaude(systemPrompt, userPrompt, 12);
-    const target = parseFloat(raw.trim());
-    if (!isNaN(target) && target >= 0 && target <= 1) {
-      // Apply difficulty-based error and smoothing
-      const error = (Math.random() - 0.5) * params.errorRange;
-      aiPaddleY = Math.max(0.05, Math.min(0.95, target + error));
-    }
-    setAgentDot('Paddle', 'active');
-  } catch(e) {
-    setAgentDot('Paddle', 'error');
-    // Fallback: simple predictive AI
-    if (ball.vx > 0 && ball.x < canvas.width * 0.5) {
-      // Ball coming toward AI
-      const t = (canvas.width - ball.x) / Math.max(Math.abs(ball.vx), 1);
-      let predictedY = (ball.y + ball.vy * t) / canvas.height;
-      aiPaddleY = Math.max(0, Math.min(1, predictedY));
-    }
-  }
-  agentsBusy.paddle = false;
-}
-
-// ════════════════════════════════════════════════════════
-//  AGENT 2 — GAME MASTER
-//  Role: Dynamically adjust game events for maximum fun
-//  Runs every 8s. Receives match flow stats, outputs JSON
-//  commands: spawn_box, spawn_asteroid, add_commentary, set_speed
-// ════════════════════════════════════════════════════════
-async function runGameMasterAgent() {
-  if (!aiMode || !gameRunning || agentsBusy.master) return;
-  agentsBusy.master = true;
-  setAgentDot('Master', 'thinking');
-
-  const matchStats = {
-    score:       { human: score.host, ai: score.guest },
-    totalHits:   totalPaddleHits,
-    asteroids:   asteroids.length,
-    boxes:       surpriseBoxes.length,
-    powerUps:    { human: powerUp.host.type, ai: powerUp.guest.type },
-    difficulty:  aiDifficulty,
-    aiCallCount
-  };
-
-  const systemPrompt = `You are the Game Master of a cosmic ping pong arcade game.
-Your job is to keep the match exciting and balanced.
-Current game: human (left) vs AI (right).
-Respond with a JSON object with these optional fields:
-{
-  "spawn_asteroid": true,         // spawn a new asteroid
-  "spawn_box": "A"|"B"|"C"|"D",  // A=paddle expand, B=shots, C=freeze, D=shrink curse
-  "commentary": "text",           // short exciting commentary (in Spanish, max 10 words)
-  "reason": "brief explanation"   // internal reasoning (not shown to player)
-}
-Only include fields you want to act on. Respond ONLY with valid JSON.
-Consider: is one player dominating? Is the game too easy/hard? Is it getting stale?`;
-
-  try {
-    const raw = await callClaude(systemPrompt, JSON.stringify(matchStats), 160);
-    const clean = raw.replace(/```json|```/g, '').trim();
-    const cmd = JSON.parse(clean);
-
-    if (cmd.spawn_asteroid && asteroids.length < MAX_ASTEROIDS) {
-      spawnAsteroid();
-      showCommentary('☄️ ' + (cmd.commentary || '¡Asteroide!'));
-    }
-    if (cmd.spawn_box) {
-      spawnSurpriseBoxOfType(cmd.spawn_box);
-    }
-    if (cmd.commentary && !cmd.spawn_asteroid) {
-      showCommentary(cmd.commentary);
-    }
-    setAgentDot('Master', 'active');
-  } catch(e) {
-    setAgentDot('Master', 'error');
-  }
-  agentsBusy.master = false;
-}
-
-// ════════════════════════════════════════════════════════
-//  AGENT 3 — COMMENTATOR
-//  Role: Generate live Spanish commentary on key events
-//  Called on: goal, asteroid break, power-up grabbed, streak
-//  Returns a short punchy Spanish phrase (Redonditos vibe)
-// ════════════════════════════════════════════════════════
-async function runCommentatorAgent(eventType, context) {
-  const now = performance.now();
-  if (now - lastCommentary < AI_COMM_COOLDOWN) return;
-  if (agentsBusy.comm) return;
-  agentsBusy.comm = true;
-  lastCommentary = now;
-  setAgentDot('Comm', 'thinking');
-
-  const playerCtx = currentPlayer ? currentPlayer.name : 'El jugador';
-  const systemPrompt = `Eres el comentarista oficial de un torneo de ping pong cósmico intergaláctico.
-Tu estilo es apasionado, elegante y espectacular — como un gran narrador deportivo.
-IMPORTANTE: Usa lenguaje totalmente apropiado, sin groserías ni palabras vulgares.
-Genera UNA sola frase corta y emocionante (máx 8 palabras) para el evento.
-Usa frases como: "¡Increíble jugada!", "¡Magistral!", "¡Imparable!", "¡El cosmos lo celebra!",
-"¡Qué precisión!", "¡Sin piedad!", "¡El campeón emerge!", "¡Fabuloso!", "¡Eso es clase!".
-Puedes mencionar al jugador: ${playerCtx}.
-Responde SOLO con la frase, sin comillas, sin puntuación extra.`;
-
-  const userPrompt = `Evento: ${eventType}. Contexto: ${context}`;
-
-  try {
-    const text = await callClaude(systemPrompt, userPrompt, 40);
-    showCommentary(text.trim());
-    setAgentDot('Comm', 'active');
-  } catch(e) {
-    setAgentDot('Comm', 'error');
-    // Fallback static commentary
-    const fallbacks = {
-      'goal_human': ['¡Extraordinario punto!', '¡Magistral jugada!', '¡El humano domina el cosmos!', '¡Eso es precisión pura!'],
-      'goal_ai':    ['¡La inteligencia artificial triunfa!', '¡Cálculo perfecto!', '¡La máquina no perdona!', '¡Impecable!'],
-      'asteroid':   ['¡El asteroide ha sido destruido!', '¡Impacto cósmico!', '¡Fragmentos en el espacio!'],
-      'powerup':    ['¡Poder especial activado!', '¡Magia cósmica!', '¡El universo favorece al valiente!'],
-      'streak':     ['¡Racha imparable!', '¡En llamas estelares!', '¡Dominio absoluto!'],
-      'game_start': ['¡Que comience el duelo cósmico!', '¡Los astros se alinean!', '¡Bienvenidos al torneo intergaláctico!']
-    };
-    const opts = fallbacks[eventType] || fallbacks['asteroid'];
-    showCommentary(opts[Math.floor(Math.random() * opts.length)]);
-  }
-  agentsBusy.comm = false;
-}
+async function runCommentatorAgent(eventType, context) {}  // removed
 
 // ════════════════════════════════════════════════════════
 //  AGENT ORCHESTRATOR
@@ -1480,83 +522,76 @@ function stopAIGame() {
 
 
 // ═══════════════════════════════════════════════════════
-//  HIGHLIGHT RECORDER + REPLAY SYSTEM
+//  GAME TUNING CONSTANTS
 // ═══════════════════════════════════════════════════════
-const HIGHLIGHT_DURATION = 3000;   // 3 seconds per highlight clip
-const RECORD_FPS         = 20;     // frames recorded per second
+const FPS_TARGET           = 60;
+const SHAKE_DURATION       = 400;
+const NET_SEND_EVERY       = 2;
+const AI_PADDLE_INTERVAL   = 350;
+const AI_MASTER_INTERVAL   = 8000;
+const MAX_SPEED_RATIO      = 0.018;
+const INITIAL_SPEED_RATIO  = 0.007;
+const SPEED_INCREMENT      = 1.055;
+const PADDLE_H_RATIO       = 0.20;
+const PADDLE_W             = 14;
+const BALL_R_RATIO         = 0.022;
+const BOX_DURATION         = 8000;
+const STREAK_NEEDED        = 3;
+
+// ── Creative features ──
+const MAX_ASTEROIDS        = 2;
+const FRAGMENT_LIFE        = 3500;
+const GRAVITY_WELL_INTERVAL= 1200;
+const GRAVITY_WELL_LIFE    = 4500;
+const GRAVITY_WELL_MAX     = 1;
+const SOLAR_FLARE_INTERVAL = 3600;
+const MAGNET_INTERVAL      = 500;
+const MAGNET_DURATION      = 240;
+
+// ── Creative features STATE ──
+let gravityWells          = [];
+let gravityWellFrameTimer = 0;
+let hitRipples            = [];
+let rallyCount            = 0;
+let prevHostPaddleY       = 0;
+let prevGuestPaddleY      = 0;
+let hostPaddleVy          = 0;
+let guestPaddleVy         = 0;
+let chargeFrames          = { host: 0, guest: 0 };
+let solarFlare            = null;
+let solarFlareFrames      = 0;
+let magnetZone            = false;
+let magnetFrameCnt        = 0;
+let magnetFrameTimer      = 0;
+let slowMoFactor          = 1;
+let meteorShower          = [];
+let constellCanvas        = null, constellCtx = null;
+
+// ── Stubs for removed systems ──
+function showCommentary(text) {}
+function drainCommentaryQueue() {}
+function startRecording() {}
+function stopRecording() {}
+function captureFrame() {}
+function getLastFrames(n) { return []; }
+async function runCommentatorAgent(eventType, context) {}
+
+// ── HIGHLIGHT RECORDER ── (removed — was 80-slot ring buffer firing every 50ms)
+const HIGHLIGHT_DURATION = 3000;
+const RECORD_FPS         = 20;
 const MAX_HIGHLIGHTS     = 3;
+let highlights           = [];
+let recordInterval       = null;
+let fbHead = 0, fbCount = 0;
+const FRAME_BUFFER_MAX = 1;
+const frameBuffer = [null];
 
-// Ring buffer of recent frames (last ~4s at 20fps = 80 frames)
-const FRAME_BUFFER_MAX   = 80;
-const frameBuffer        = new Array(FRAME_BUFFER_MAX); // pre-allocated ring buffer
-let   fbHead             = 0;   // next write position
-let   fbCount            = 0;   // number of valid frames stored
-let   recordInterval     = null;
-let   highlights         = [];     // [{frames, label, timestamp}] — 3 best moments
-let   replayActive       = false;
-let   replayCanvas       = null;
-let   replayCtx          = null;
-let   replayAnimId       = null;
-
-// Capture a lightweight snapshot every 50ms during game
-function startRecording() {
-  if (recordInterval) clearInterval(recordInterval);
-  fbHead = 0; fbCount = 0;
-  highlights = [];
-  recordInterval = setInterval(captureFrame, 1000 / RECORD_FPS);
-}
-
-function stopRecording() {
-  if (recordInterval) { clearInterval(recordInterval); recordInterval = null; }
-}
-
-// Returns the last N frames in chronological order
-function getLastFrames(n) {
-  const count = Math.min(n, fbCount);
-  const result = [];
-  for (let i = count - 1; i >= 0; i--) {
-    result.unshift(frameBuffer[(fbHead - 1 - i + FRAME_BUFFER_MAX) % FRAME_BUFFER_MAX]);
-  }
-  return result;
-}
+// highlight/replay system removed — ring buffer cleared
 
 // Cache static asteroid pts separately — never copy per-frame
 const astPtsCache = new Map(); // asteroid index → pts (only updated when count changes)
 let   lastAstCacheCount = -1;
 
-function captureFrame() {
-  if (!gameRunning || countdownVal > 0) return;
-  const cw = canvas.width, ch = canvas.height;
-  const now = performance.now();
-
-  // Refresh pts cache only when asteroid count changes
-  if (asteroids.length !== lastAstCacheCount) {
-    astPtsCache.clear();
-    asteroids.forEach((a, i) => astPtsCache.set(i, a.pts));
-    lastAstCacheCount = asteroids.length;
-  }
-
-  const frame = {
-    bx: +(ball.x/cw).toFixed(4), by: +(ball.y/ch).toFixed(4),
-    br: +(ball.r/cw).toFixed(4),
-    hpy: +(hostPaddle.y/ch).toFixed(4),  hph: +(hostPaddle.h/ch).toFixed(4),
-    gpy: +(guestPaddle.y/ch).toFixed(4), gph: +(guestPaddle.h/ch).toFixed(4),
-    sh: score.host, sg: score.guest,
-    // Only store position+angle — pts fetched from cache at replay time
-    ast: asteroids.map((a, i) => ({
-      x: +(a.x/cw).toFixed(3), y: +(a.y/ch).toFixed(3),
-      r: +(a.r/cw).toFixed(3), angle: +(a.angle).toFixed(3), i
-    })),
-    frags: fragments.slice(0, 6).map((f, i) => ({ // cap at 6 frags for memory
-      x: +(f.x/cw).toFixed(3), y: +(f.y/ch).toFixed(3),
-      r: +(f.r/cw).toFixed(3), angle: +(f.angle).toFixed(3),
-      age: +Math.min((now - f.bornAt) / FRAGMENT_LIFE, 1).toFixed(3), i
-    }))
-  };
-  frameBuffer[fbHead] = frame;
-  fbHead = (fbHead + 1) % FRAME_BUFFER_MAX;
-  if (fbCount < FRAME_BUFFER_MAX) fbCount++;
-}
 
 // Highlights/replay removed — stubs so call-sites don't throw
 function saveHighlight(label) {}
@@ -1819,28 +854,39 @@ function drawParticles() {
 }
 
 // ═══════════════════════════════════════════════════════
-//  BALL TRAIL
+//  BALL TRAIL — ring buffer, zero allocation
 // ═══════════════════════════════════════════════════════
+const TRAIL_MAX = 8;
+const trailBuf  = Array.from({length: TRAIL_MAX}, () => ({x:0,y:0,r:0}));
+let   trailHead = 0, trailLen = 0;
+
 function updateBallTrail() {
   if (ball.x === undefined) return;
-  ballTrail.push({ x: ball.x, y: ball.y, r: ball.r });
-  if (ballTrail.length > TRAIL_LENGTH) ballTrail.shift();
+  const slot = trailBuf[trailHead];
+  slot.x = ball.x; slot.y = ball.y; slot.r = ball.r;
+  trailHead = (trailHead + 1) % TRAIL_MAX;
+  if (trailLen < TRAIL_MAX) trailLen++;
 }
 
+// keep old ballTrail alias so other references don't break
+const ballTrail = { length: 0 };
+
 function drawBallTrail() {
-  if (!ballTrail.length) return;
-  // Map ball speed → hue: slow=220(blue) → fast=0(red)
+  if (trailLen < 2) return;
   const speedRatio = ball.speed ? ball.speed / (canvas.width * MAX_SPEED_RATIO) : 0.3;
   const hue        = Math.round(220 - Math.min(speedRatio, 1) * 220);
   const trailColor = `hsl(${hue},85%,68%)`;
   ctx.save();
   ctx.fillStyle   = trailColor;
   ctx.shadowColor = trailColor;
-  ctx.shadowBlur  = 8;
-  for (let i = 0; i < ballTrail.length; i++) {
-    const t     = ballTrail[i];
-    const alpha = (i / ballTrail.length) * 0.38;
-    const r     = Math.max(t.r * (i / ballTrail.length) * 0.85, 1);
+  ctx.shadowBlur  = 5;
+  for (let i = 0; i < trailLen; i++) {
+    // oldest first: walk backwards from (head-trailLen)
+    const idx   = (trailHead - trailLen + i + TRAIL_MAX) % TRAIL_MAX;
+    const t     = trailBuf[idx];
+    const frac  = i / trailLen;
+    const alpha = frac * 0.36;
+    const r     = Math.max(t.r * frac * 0.82, 1);
     ctx.globalAlpha = alpha;
     ctx.beginPath(); ctx.arc(t.x, t.y, r, 0, Math.PI * 2); ctx.fill();
   }
@@ -2287,28 +1333,24 @@ function drawAsteroid(ast) {
     i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   }
   ctx.closePath();
-  const grad = ctx.createRadialGradient(-ast.r * 0.25, -ast.r * 0.25, ast.r * 0.1, 0, 0, ast.r);
-  grad.addColorStop(0, '#9a8a7a');
-  grad.addColorStop(0.5, '#5c4a3a');
-  grad.addColorStop(1, '#2e1e0e');
-  ctx.fillStyle = grad;
+  // Cache gradient — only rebuild when radius changes
+  if (!ast._grad || ast._gradR !== ast.r) {
+    const g = ctx.createRadialGradient(-ast.r*.25,-ast.r*.25,ast.r*.1,0,0,ast.r);
+    g.addColorStop(0,'#9a8a7a'); g.addColorStop(.5,'#5c4a3a'); g.addColorStop(1,'#2e1e0e');
+    ast._grad = g; ast._gradR = ast.r;
+  }
+  ctx.fillStyle = ast._grad;
   ctx.fill();
   ctx.shadowColor = '#ff8833';
-  ctx.shadowBlur = 9;
-  ctx.strokeStyle = 'rgba(255,160,60,0.45)';
-  ctx.lineWidth = 1.5;
+  ctx.shadowBlur = 5;
+  ctx.strokeStyle = 'rgba(255,160,60,0.4)';
+  ctx.lineWidth = 1.2;
   ctx.stroke();
-  ctx.shadowBlur = 4;
-  // Small craters
-  ctx.shadowBlur = 4;
-  [[ast.r * 0.25, -ast.r * 0.35, ast.r * 0.12],
-   [-ast.r * 0.3, ast.r * 0.2,  ast.r * 0.09],
-   [ast.r * 0.1,  ast.r * 0.4,  ast.r * 0.07]].forEach(([cx, cy, cr]) => {
-    ctx.beginPath();
-    ctx.arc(cx, cy, cr, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.fill();
-  });
+  ctx.shadowBlur = 0;
+  // Craters — only 2 for perf
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.beginPath(); ctx.arc(ast.r*.25, -ast.r*.35, ast.r*.11, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-ast.r*.3,  ast.r*.2,  ast.r*.08, 0, Math.PI*2); ctx.fill();
   ctx.restore();
 }
 
@@ -2492,7 +1534,7 @@ function startGame(config) {
   guestPaddleY = 0.5; myTouchY = null; isDragging = false;
   asteroids = []; fragments = []; surpriseBoxes = []; shots = []; particles = [];
   aiLastShotTime = 0;
-  ballTrail.length = 0;
+  trailLen = 0; trailHead = 0; // reset trail ring buffer
   streak.host = 0; streak.guest = 0;
   rematchPending = false;
   // Save received guest name before reset (myname message arrives before startGame is called)
@@ -2535,7 +1577,7 @@ function receiveStartGame(data) {
 function initPaddles() {
   const cw = canvas.width, ch = canvas.height, ph = ch * PADDLE_H_RATIO;
   // Push paddles inward — large black zone remains for finger drag
-  const inset = Math.max(cw * 0.12, 44); // 12% from edge
+  const inset = Math.max(cw * 0.19, 58); // 19% from edge — room for finger behind paddle
   hostPaddle  = { x: inset, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
   guestPaddle = { x: cw - inset - PADDLE_W, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
 }
