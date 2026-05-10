@@ -427,29 +427,17 @@
   <div class="final-score" id="finalScore">10 – 5</div>
   <div id="rematchStatus" style="color:var(--muted);font-size:0.85rem;min-height:22px;margin-bottom:4px;"></div>
   <button class="btn btn-primary" id="rematchBtn" onclick="requestRematch()">🔄 Rematch</button>
-  <button class="btn btn-success" id="replayBtn" onclick="showReplay()" style="display:none">🎬 Watch Highlights</button>
   <button class="btn btn-secondary" onclick="goHome()">Home</button>
 </div>
 
 <!-- REPLAY SCREEN -->
-<div class="screen" id="replayScreen">
-  <canvas id="replayCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%"></canvas>
-  <!-- Overlay UI on top of replay canvas -->
-  <div id="replayOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:20px">
-    <div id="replayTitle" style="font-size:clamp(1.8rem,8vw,3rem);font-weight:900;letter-spacing:3px;color:#fff;text-shadow:0 0 30px rgba(108,99,255,0.9),0 0 60px rgba(108,99,255,0.5);margin-bottom:4px">🎬 REPLAY</div>
-    <div id="replaySubtitle" style="font-size:0.85rem;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase"></div>
+<div id="replaySubtitle" style="font-size:0.85rem;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase"></div>
   </div>
   <button class="btn btn-secondary" onclick="stopReplay()" style="position:absolute;bottom:28px;left:50%;transform:translateX(-50%);max-width:200px;z-index:10">✕ Close</button>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════
-//  LOCAL STORAGE HELPERS (replaces store for GitHub Pages)
-// ═══════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════
-//  FIREBASE CONFIG — replace with your Firebase project values
-//  Get these from: console.firebase.google.com → Project Settings → Web App
-// ═══════════════════════════════════════════════════════
+
 const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyCD0sZsAPtJY1sfXqsPfFnGuIbJd1xDTME",
   authDomain:        "cosmic-pong-ariel.firebaseapp.com",
@@ -470,7 +458,7 @@ function initFirebase() {
     }
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore();
-    // Sign in anonymously so Firestore rules allow read/write
+    
     firebase.auth().signInAnonymously().then(() => {
       firebaseReady = true;
       console.log('✅ Firebase connected');
@@ -481,9 +469,8 @@ function initFirebase() {
 }
 initFirebase();
 
-// ── Hybrid store: Firebase (cross-browser) + localStorage (offline fallback) ──
 const store = {
-  // localStorage fallback always maintained in parallel
+  
   _ls: {
     get(key) { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch(e) { return null; } },
     set(key, v) { try { localStorage.setItem(key, typeof v==='string'?v:JSON.stringify(v)); } catch(e) {} },
@@ -498,15 +485,15 @@ const store = {
     }
   },
 
-  // Sync get — uses localStorage (instant), Firebase updates happen async
+  
   get(key) { return this._ls.get(key); },
 
-  // Set — writes to localStorage immediately, Firebase async
+  
   set(key, value) {
     const str = typeof value === 'string' ? value : JSON.stringify(value);
     this._ls.set(key, str);
     if (firebaseReady && db) {
-      // Use key as Firestore document ID (replace invalid chars)
+      
       const docId = key.replace(/[:/]/g, '_');
       db.collection('cosmicpong').doc(docId).set({ key, value: str, ts: Date.now() })
         .catch(e => console.warn('Firebase set failed:', e));
@@ -516,7 +503,7 @@ const store = {
 
   list(prefix) { return this._ls.list(prefix); },
 
-  // Fetch from Firebase and update localStorage (call when loading player data)
+  
   async syncFromFirebase(key) {
     if (!firebaseReady || !db) return null;
     try {
@@ -531,7 +518,7 @@ const store = {
     return null;
   },
 
-  // Fetch all keys with prefix from Firebase
+  
   async listFromFirebase(prefix) {
     if (!firebaseReady || !db) return this._ls.list(prefix);
     try {
@@ -540,39 +527,33 @@ const store = {
         .where('key', '<', prefix + '')
         .get();
       const keys = snap.docs.map(d => d.data().key);
-      // Update localStorage with all fetched docs
+      
       snap.docs.forEach(d => { const { key, value } = d.data(); this._ls.set(key, value); });
       return { keys };
     } catch(e) { return this._ls.list(prefix); }
   }
 };
 
-// ═══════════════════════════════════════════════════════
-//  CONFIG
-// ═══════════════════════════════════════════════════════
 const WINNING_SCORE        = 10;
 const PADDLE_W             = 14;
-const PADDLE_H_RATIO       = 0.144;   // -20% from 0.18
+const PADDLE_H_RATIO       = 0.144;   
 const BALL_RADIUS_RATIO    = 0.018;
-const INITIAL_SPEED_RATIO  = 0.007;   // comfortable start
-const MAX_SPEED_RATIO      = 0.021;   // smooth cap
-const SPEED_INCREMENT      = 1.032;   // +3.2% per hit — very smooth
+const INITIAL_SPEED_RATIO  = 0.007;   
+const MAX_SPEED_RATIO      = 0.021;   
+const SPEED_INCREMENT      = 1.032;   
 const FPS_TARGET           = 60;
 const MAX_ASTEROIDS        = 3;
-const ASTEROID_HIT_SPAWN   = 10;      // asteroid every 10 hits
-const BOX_HIT_SPAWN        = 5;       // surprise box at hit 5,15,25… (halfway)
+const ASTEROID_HIT_SPAWN   = 10;      
+const BOX_HIT_SPAWN        = 5;       
 const THEME_DURATION_MS    = 60000;
-const BOX_DURATION         = 30000;   // 30s power-up duration
-// Type-B box: unlimited shots for 30s — no count limit
-const FRAGMENT_LIFE        = 5000;    // ms fragments survive
-const STREAK_NEEDED        = 3;       // consecutive points for streak bonus
-const SHRINK_DURATION      = 8000;    // ms opponent paddle stays shrunk after streak
-const SHAKE_DURATION       = 180;     // ms — short, only on score
-const TRAIL_LENGTH         = 18;      // ball trail frames
+const BOX_DURATION         = 30000;   
 
-// ═══════════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════════
+const FRAGMENT_LIFE        = 5000;    
+const STREAK_NEEDED        = 3;       
+const SHRINK_DURATION      = 8000;    
+const SHAKE_DURATION       = 180;     
+const TRAIL_LENGTH         = 18;      
+
 let peer = null, conn = null, isHost = false, myCode = '';
 let frameId = null, lastTime = 0;
 const score = { host: 0, guest: 0 };
@@ -583,74 +564,62 @@ let isDragging = false;
 let gameRunning = false;
 let countdownVal = 0, countdownTimer = null;
 let asteroids = [];
-let fragments = [];       // asteroid fragments (small, fade out)
-let surpriseBoxes = [];   // power-up boxes
-let shots = [];           // projectiles fired by players
+let fragments = [];       
+let surpriseBoxes = [];   
+let shots = [];           
 let totalPaddleHits = 0;
 
-// ── Network throttle ──
-let netFrameCount  = 0;   // count frames since last send
-const NET_SEND_EVERY = 3; // send state every 3 frames (~20fps over network) — less CPU
-let lastAsteroidCount = -1; // track when to re-send pts
+let netFrameCount  = 0;   
+const NET_SEND_EVERY = 3; 
+let lastAsteroidCount = -1; 
 let lastBoxCount      = -1;
-// Ball dead-reckoning on guest side
-let ballInterp = { x: 0, y: 0, vx: 0, vy: 0 }; // last received velocity
 
-// ── Power-up state ──
-// host/guest each have independent power-up tracking
+let ballInterp = { x: 0, y: 0, vx: 0, vy: 0 }; 
+
 const powerUp = {
   host:  { type: null, endsAt: 0 },
   guest: { type: null, endsAt: 0 }
 };
-// Titillation phase for animated paddle glow
+
 let titillateT = 0;
 
-// ── Multi-Agent System ──
-let aiMode         = false;       // true when playing vs AI
-let aiDifficulty   = 'easy';      // easy | medium | hard
-let aiPaddleY      = 0.5;         // AI target paddle position (normalized)
-let aiLoopTimer    = null;        // setInterval for AI paddle agent
-let masterLoopTimer= null;        // setInterval for game master agent
-let lastCommentary = 0;           // timestamp of last commentary
+let aiMode         = false;       
+let aiDifficulty   = 'easy';      
+let aiPaddleY      = 0.5;         
+let aiLoopTimer    = null;        
+let masterLoopTimer= null;        
+let lastCommentary = 0;           
 let agentsBusy     = { paddle: false, master: false, comm: false };
-let aiCallCount    = 0;           // total API calls made this game
-const AI_PADDLE_INTERVAL  = 350;  // ms between AI paddle decisions
-const AI_MASTER_INTERVAL  = 8000; // ms between game master decisions
-const AI_COMM_COOLDOWN    = 5000; // ms minimum between commentary lines
-// Commentary queue to show messages one at a time
+let aiCallCount    = 0;           
+const AI_PADDLE_INTERVAL  = 350;  
+const AI_MASTER_INTERVAL  = 8000; 
+const AI_COMM_COOLDOWN    = 5000; 
+
 let commentaryQueue = [];
 let commentaryShowing = false;
 
-// ── Room persistence ──
-let roomExpireTimer   = null;  // setTimeout that destroys room after 2min
-let roomCountdownInt  = null;  // setInterval that updates the UI countdown
-let roomSecondsLeft   = 0;     // seconds remaining
+let roomExpireTimer   = null;  
+let roomCountdownInt  = null;  
+let roomSecondsLeft   = 0;     
 
-// ── Streak ──
 const streak = { host: 0, guest: 0 };
 
-// ── Screen shake ──
 let shakeTime = 0, shakeIntensity = 0;
 
-// ── Ball trail ──
-const ballTrail = []; // {x,y,alpha}
+const ballTrail = []; 
 
-// ── Particles ──
-let particles = []; // goal explosion
+let particles = []; 
 
-// ── Voice chat ──
 let localStream   = null;
 let voiceCall     = null;
 let voiceMuted    = false;
-let opponentSpeaking = false; // analyser-based indicator
+let opponentSpeaking = false; 
 
-// ── Rematch ──
-let rematchPending = false; // host requested rematch, waiting for guest
+let rematchPending = false; 
+let aiLastShotTime = 0;
 
-// ── Shrink curse ──
 const shrinkTimer = { host: null, guest: null };
 
-// ── Taunt state ──
 let tauntActive  = false;
 let tauntAlpha   = 0;
 let tauntSender  = '';
@@ -660,17 +629,14 @@ const TAUNT_HOLD = 1400;
 const TAUNT_FADE = 300;
 const TAUNT_COOL = 6000;
 
-// ═══════════════════════════════════════════════════════
-//  CANVAS
-// ═══════════════════════════════════════════════════════
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
 
 function resizeCanvas() {
-  // Use documentElement dimensions to handle tablet/iOS correctly
+  
   canvas.width  = document.documentElement.clientWidth  || window.innerWidth;
   canvas.height = document.documentElement.clientHeight || window.innerHeight;
-  // Invalidate cached gradients and offscreen canvases so they rebuild at new size
+  
   _bgGradSize = { w: 0, h: 0 };
   _zoneGrads  = null;
   _nebulaCache = null;
@@ -685,7 +651,7 @@ function resizeCanvas() {
   guestPaddle.x = canvas.width - _inset - PADDLE_W;
   guestPaddle.w = PADDLE_W;
   guestPaddle.h = canvas.height * PADDLE_H_RATIO;
-  // Reset ball/paddle positions proportionally
+  
   if (hostPaddle.y !== undefined) {
     hostPaddle.y  = Math.max(0, Math.min(canvas.height - hostPaddle.h,  hostPaddle.y));
     guestPaddle.y = Math.max(0, Math.min(canvas.height - guestPaddle.h, guestPaddle.y));
@@ -694,13 +660,10 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 300));
 
-// ═══════════════════════════════════════════════════════
-//  SCREEN HELPERS
-// ═══════════════════════════════════════════════════════
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  // Ensure music is playing on lobby/player screens
+  
   if ((id === 'lobbyScreen' || id === 'playerScreen' || id === 'waitingScreen' || id === 'joiningScreen') 
       && audioCtx && audioCtx.state === 'running' && activeNodes.length === 0 && !muted) {
     startLobbyMusic();
@@ -716,9 +679,6 @@ function showToast(msg, duration = 2000) {
   setTimeout(() => t.classList.remove('show'), duration);
 }
 
-// ═══════════════════════════════════════════════════════
-//  AUDIO ENGINE  (Web Audio API — space ambient)
-// ═══════════════════════════════════════════════════════
 let audioCtx = null, masterGain = null;
 let muted = false;
 let activeNodes = [];
@@ -726,7 +686,6 @@ let arpTimers = [];
 let themeTimer = null;
 let gameThemeIdx = 0;
 
-// Frequency table
 const N = {
   C1:32.7, D1:36.7, E1:41.2, F1:43.7, G1:49.0, A1:55.0, B1:61.7,
   C2:65.4, D2:73.4, E2:82.4, F2:87.3, G2:98.0, A2:110, B2:123.5,
@@ -735,18 +694,16 @@ const N = {
   C5:523.3, D5:587.3, E5:659.3, F5:698.5, G5:784, A5:880,
 };
 
-// ═══ REDONDITOS DE RICOTA — Rock Nacional Argentino ═══
-// Each theme has: chord pads, a riff melody, walking bass, AND a rhythm engine
 const THEMES = [
-  // LOBBY — "La Maza" Am ominous intro
+  
   {
     name:'La Maza 🎸',
     chords:[N.A2,N.C3,N.E3], riff:[N.A3,N.E4,N.A4,N.G4,N.E4,N.C4,N.A3,N.G3],
     bass:[N.A1,N.A1,N.E1,N.G1], bassRhythm:[1,0,0.5,0.5],
     tempo:0.55, bpm:85, vol:0.12,
-    beatPattern:[1,0,0,0.3, 1,0,0.5,0,  1,0,0,0.3, 1,0.3,0.5,0], // kick,snare pattern
+    beatPattern:[1,0,0,0.3, 1,0,0.5,0,  1,0,0,0.3, 1,0.3,0.5,0], 
   },
-  // GAME 1 — "Jijiji" Em fast punk-rock
+  
   {
     name:'Jijiji 🤘',
     chords:[N.E2,N.G2,N.B2], riff:[N.E4,N.G4,N.A4,N.B4,N.A4,N.G4,N.E4,N.B3],
@@ -754,7 +711,7 @@ const THEMES = [
     tempo:0.22, bpm:160, vol:0.14,
     beatPattern:[1,0,0,0, 0.8,0,0,0.4, 1,0,0,0, 0.8,0,0.5,0],
   },
-  // GAME 2 — "Nuestro Amo" Dm groove
+  
   {
     name:'Nuestro Amo 🌑',
     chords:[N.D2,N.F2,N.A2,N.C3], riff:[N.D4,N.F4,N.A4,N.C5,N.A4,N.F4,N.D4,N.C4],
@@ -762,7 +719,7 @@ const THEMES = [
     tempo:0.35, bpm:110, vol:0.13,
     beatPattern:[1,0,0,0.5, 0.7,0,0.5,0, 1,0,0,0.5, 0.7,0.3,0,0],
   },
-  // GAME 3 — "Un Poco de Amor" Gm emotional
+  
   {
     name:'Amor Cósmico 💜',
     chords:[N.G2,N.A2*1.059,N.D3], riff:[N.G4,N.D4,N.G4,N.A4*1.059,N.D5,N.A4*1.059,N.G4,N.D4],
@@ -770,7 +727,7 @@ const THEMES = [
     tempo:0.42, bpm:95, vol:0.12,
     beatPattern:[1,0,0,0.4, 0.8,0,0.4,0, 1,0,0,0.4, 0.8,0.4,0,0.3],
   },
-  // GAME 4 — "Superlógico" Am fast cumbia-rock
+  
   {
     name:'Superlógico ⚡',
     chords:[N.A2,N.E3,N.A3], riff:[N.A4,N.C5,N.E5,N.A5,N.E5,N.C5,N.A4,N.E4],
@@ -778,7 +735,7 @@ const THEMES = [
     tempo:0.18, bpm:175, vol:0.15,
     beatPattern:[1,0,0.8,0, 1,0,0.8,0.4, 1,0,0.8,0, 1,0.4,0.8,0],
   },
-  // GAME 5 — "Tal Belgrano" Bm melancholy
+  
   {
     name:'Tal Belgrano 🌒',
     chords:[N.B2,N.D3,N.F3*1.059,N.A3], riff:[N.B3,N.D4,N.F4*1.059,N.A4,N.F4*1.059,N.D4,N.B3,N.A3],
@@ -834,18 +791,14 @@ function playOsc(freq, type, vol, attack, decay, time) {
   osc.stop(time + attack + decay + 0.05);
 }
 
-// ── Make distortion curve ──
 function makeDistCurve() {}
 
 function playTheme() {}
 
-// ── Bass loop ──
 function startBassLoop() {}
 
-// ── Drum loop — kick + snare using noise + sine ──
 function startDrumLoop() {}
 
-// ── Guitar riff loop ──
 function startRiffLoop() {}
 
 function startLobbyMusic() {}
@@ -854,10 +807,6 @@ function startGameMusic() {}
 
 function scheduleNextTheme() {}
 
-
-// ═══════════════════════════════════════════════════════
-//  TAUNT  — "IN YOUR FACE!"
-// ═══════════════════════════════════════════════════════
 function showTauntBtn() {
   const btn = document.getElementById('tauntBtn');
   if (btn) { btn.className = isHost ? 'host-side' : 'guest-side'; btn.style.display = 'block'; }
@@ -891,7 +840,7 @@ function fireTaunt() {
   const btn = document.getElementById('tauntBtn');
   btn.classList.add('cooling');
   setTimeout(() => btn.classList.remove('cooling'), TAUNT_COOL);
-  // Both: host sends to guest, guest sends to host
+  
   const msg = { type: 'taunt', sender: isHost ? 'host' : 'guest' };
   if (isHost) sendToGuest(msg); else sendToHost(msg);
   activateTaunt(isHost ? 'host' : 'guest');
@@ -903,7 +852,7 @@ function activateTaunt(sender) {
   tauntAlpha  = 0;
   tauntPhase  = 'in';
 
-  // Fade IN
+  
   const fadeInStart = performance.now();
   const fadeIn = () => {
     const t = (performance.now() - fadeInStart) / TAUNT_FADE;
@@ -911,7 +860,7 @@ function activateTaunt(sender) {
     if (t < 1) { requestAnimationFrame(fadeIn); return; }
     tauntAlpha = 1;
     tauntPhase = 'hold';
-    // Hold, then fade out
+    
     tauntTimer = setTimeout(() => {
       tauntPhase = 'out';
       const fadeOutStart = performance.now();
@@ -932,14 +881,14 @@ function activateTaunt(sender) {
 function drawTaunt(cw, ch) {
   if (!tauntActive && tauntAlpha <= 0) return;
 
-  // Dark overlay
+  
   ctx.save();
   ctx.globalAlpha = tauntAlpha * 0.72;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, cw, ch);
   ctx.globalAlpha = 1;
 
-  // Glowing background blob
+  
   const blobAlpha = tauntAlpha * 0.55;
   const grad = ctx.createRadialGradient(cw/2, ch/2, 0, cw/2, ch/2, cw * 0.55);
   grad.addColorStop(0, `rgba(255,30,0,${blobAlpha})`);
@@ -948,28 +897,28 @@ function drawTaunt(cw, ch) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, cw, ch);
 
-  // Shake offset when fully visible
+  
   let shakeX = 0, shakeY = 0;
   if (tauntPhase === 'hold') {
     shakeX = (Math.random() - 0.5) * 6 * tauntAlpha;
     shakeY = (Math.random() - 0.5) * 4 * tauntAlpha;
   }
 
-  // Main text
+  
   ctx.globalAlpha = tauntAlpha;
   const fontSize = Math.min(cw * 0.17, 100);
   ctx.font = `900 ${fontSize}px 'Arial Black', 'Impact', sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // Outline
+  
   ctx.strokeStyle = '#000';
   ctx.lineWidth   = fontSize * 0.12;
   ctx.lineJoin    = 'round';
   ctx.strokeText('IN YOUR', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
   ctx.strokeText('FACE! 😤', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
 
-  // Fill with gradient
+  
   const tg = ctx.createLinearGradient(0, ch/2 - fontSize, 0, ch/2 + fontSize);
   tg.addColorStop(0,   '#ffffff');
   tg.addColorStop(0.3, '#ffdd00');
@@ -980,9 +929,9 @@ function drawTaunt(cw, ch) {
   ctx.shadowBlur  = 40 * tauntAlpha;
   ctx.fillText('IN YOUR', cw/2 + shakeX, ch/2 - fontSize * 0.6 + shakeY);
   ctx.fillText('FACE! 😤', cw/2 + shakeX, ch/2 + fontSize * 0.6 + shakeY);
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur = 4;
 
-  // Sender label
+  
   const senderLabel = tauntSender === (isHost ? 'host' : 'guest') ? '¡Tú!' : '¡Ellos!';
   ctx.font         = `bold ${Math.min(cw * 0.04, 22)}px sans-serif`;
   ctx.fillStyle    = `rgba(255,255,255,${tauntAlpha * 0.6})`;
@@ -993,11 +942,8 @@ function drawTaunt(cw, ch) {
   ctx.restore();
 }
 
-// ═══════════════════════════════════════════════════════
-//  PLAYER SYSTEM
-// ═══════════════════════════════════════════════════════
-let currentPlayer = null;  // { name, createdAt, won, lost }
-let opponentName  = '???'; // received from opponent at game start
+let currentPlayer = null;  
+let opponentName  = '???'; 
 
 function switchTab(tab) {
   ['new','login','hof','history'].forEach(t => {
@@ -1014,7 +960,7 @@ async function loadHof() {
   const el = document.getElementById('hofList');
   el.innerHTML = '<div style="color:var(--muted);padding:20px;text-align:center">Loading…</div>';
   try {
-    // Use Firebase for global leaderboard if available
+    
     const res = firebaseReady ? await store.listFromFirebase('player:') : store.list('player:');
     const keys = res && res.keys ? res.keys : [];
     if (!keys.length) {
@@ -1028,7 +974,7 @@ async function loadHof() {
         if (r) players.push(JSON.parse(r.value));
       } catch(e) {}
     }
-    // Sort by wins desc
+    
     players.sort((a,b) => (b.won||0) - (a.won||0));
     let html = '<div class="hof-row header"><span>Player</span><span>Created</span><span style="text-align:center">W</span><span style="text-align:center">L</span></div>';
     players.forEach((p, i) => {
@@ -1094,19 +1040,13 @@ function recordResult(iWon) {
   else       currentPlayer.lost = (currentPlayer.lost||0) + 1;
   currentPlayer.lastPlayed = Date.now();
   const key = 'player:' + currentPlayer.name.toLowerCase();
-  // store.set writes to localStorage + Firebase async
+  
   store.set(key, JSON.stringify(currentPlayer));
-  // Refresh greeting
+  
   const greet = document.getElementById('playerGreeting');
   if (greet) greet.textContent = '👾 ' + currentPlayer.name + '  ·  Won: ' + currentPlayer.won + '  Lost: ' + currentPlayer.lost;
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  MULTI-AGENT ORCHESTRATOR
-// ═══════════════════════════════════════════════════════
-
-// ── Shared Claude API call ──
 async function callClaude(systemPrompt, userPrompt, maxTokens = 120) {
   aiCallCount++;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1124,7 +1064,6 @@ async function callClaude(systemPrompt, userPrompt, maxTokens = 120) {
   return data.content[0]?.text || '';
 }
 
-// ── UI helpers ──
 function setAgentDot(agent, state) {
   const el = document.getElementById('dot' + agent);
   if (el) el.className = 'agent-dot ' + state;
@@ -1148,7 +1087,6 @@ function drainCommentaryQueue() {
   }, 3200);
 }
 
-// ── Difficulty parameters ──
 function getAIDiffParams() {
   return {
     easy:   { reactionDelay: 0.55, errorRange: 0.18, maxSpeed: 0.012 },
@@ -1157,12 +1095,6 @@ function getAIDiffParams() {
   }[aiDifficulty];
 }
 
-// ════════════════════════════════════════════════════════
-//  AGENT 1 — AI PADDLE
-//  Role: Decide where to move the AI opponent paddle
-//  Runs every 350ms. Receives ball trajectory + positions,
-//  returns a normalized Y (0-1) target for the paddle.
-// ════════════════════════════════════════════════════════
 async function runPaddleAgent() {
   if (!aiMode || !gameRunning || countdownVal > 0 || agentsBusy.paddle) return;
   agentsBusy.paddle = true;
@@ -1171,7 +1103,7 @@ async function runPaddleAgent() {
   const cw = canvas.width, ch = canvas.height;
   const params = getAIDiffParams();
 
-  // Build compact game state for the prompt
+  
   const state = {
     ball: { x: +(ball.x/cw).toFixed(3), y: +(ball.y/ch).toFixed(3),
             vx: +(ball.vx/cw).toFixed(4), vy: +(ball.vy/ch).toFixed(4) },
@@ -1198,16 +1130,16 @@ Rules:
     const raw = await callClaude(systemPrompt, userPrompt, 12);
     const target = parseFloat(raw.trim());
     if (!isNaN(target) && target >= 0 && target <= 1) {
-      // Apply difficulty-based error and smoothing
+      
       const error = (Math.random() - 0.5) * params.errorRange;
       aiPaddleY = Math.max(0.05, Math.min(0.95, target + error));
     }
     setAgentDot('Paddle', 'active');
   } catch(e) {
     setAgentDot('Paddle', 'error');
-    // Fallback: simple predictive AI
+    
     if (ball.vx > 0 && ball.x < canvas.width * 0.5) {
-      // Ball coming toward AI
+      
       const t = (canvas.width - ball.x) / Math.max(Math.abs(ball.vx), 1);
       let predictedY = (ball.y + ball.vy * t) / canvas.height;
       aiPaddleY = Math.max(0, Math.min(1, predictedY));
@@ -1216,12 +1148,6 @@ Rules:
   agentsBusy.paddle = false;
 }
 
-// ════════════════════════════════════════════════════════
-//  AGENT 2 — GAME MASTER
-//  Role: Dynamically adjust game events for maximum fun
-//  Runs every 8s. Receives match flow stats, outputs JSON
-//  commands: spawn_box, spawn_asteroid, add_commentary, set_speed
-// ════════════════════════════════════════════════════════
 async function runGameMasterAgent() {
   if (!aiMode || !gameRunning || agentsBusy.master) return;
   agentsBusy.master = true;
@@ -1272,12 +1198,6 @@ Consider: is one player dominating? Is the game too easy/hard? Is it getting sta
   agentsBusy.master = false;
 }
 
-// ════════════════════════════════════════════════════════
-//  AGENT 3 — COMMENTATOR
-//  Role: Generate live Spanish commentary on key events
-//  Called on: goal, asteroid break, power-up grabbed, streak
-//  Returns a short punchy Spanish phrase (Redonditos vibe)
-// ════════════════════════════════════════════════════════
 async function runCommentatorAgent(eventType, context) {
   const now = performance.now();
   if (now - lastCommentary < AI_COMM_COOLDOWN) return;
@@ -1304,7 +1224,7 @@ Responde SOLO con la frase, sin comillas, sin puntuación extra.`;
     setAgentDot('Comm', 'active');
   } catch(e) {
     setAgentDot('Comm', 'error');
-    // Fallback static commentary
+    
     const fallbacks = {
       'goal_human': ['¡Extraordinario punto!', '¡Magistral jugada!', '¡El humano domina el cosmos!', '¡Eso es precisión pura!'],
       'goal_ai':    ['¡La inteligencia artificial triunfa!', '¡Cálculo perfecto!', '¡La máquina no perdona!', '¡Impecable!'],
@@ -1319,10 +1239,6 @@ Responde SOLO con la frase, sin comillas, sin puntuación extra.`;
   agentsBusy.comm = false;
 }
 
-// ════════════════════════════════════════════════════════
-//  AGENT ORCHESTRATOR
-//  Starts/stops all agents, moves AI paddle in game loop
-// ════════════════════════════════════════════════════════
 function startAgents() {
   if (!aiMode) return;
   document.getElementById('agentHud').style.display = 'flex';
@@ -1330,13 +1246,13 @@ function startAgents() {
   if (sb) sb.style.display = 'flex';
   aiCallCount = 0;
 
-  // Agent 1: Paddle — runs every 350ms
+  
   aiLoopTimer = setInterval(runPaddleAgent, AI_PADDLE_INTERVAL);
 
-  // Agent 2: Game Master — runs every 8s
+  
   masterLoopTimer = setInterval(runGameMasterAgent, AI_MASTER_INTERVAL);
 
-  // Initial commentary
+  
   setTimeout(() => runCommentatorAgent('game_start',
     `${currentPlayer?.name || 'Humano'} vs AI (${aiDifficulty})`), 1500);
 }
@@ -1355,16 +1271,31 @@ function updateAIPaddle(dt) {
   if (!aiMode || !gameRunning) return;
   const ch = canvas.height;
   const params = getAIDiffParams();
-  // Smoothly move AI paddle toward target
+  
   const targetY = aiPaddleY * ch - guestPaddle.h / 2;
   const speed   = params.maxSpeed * canvas.width;
   const diff    = targetY - guestPaddle.y;
   const move    = Math.sign(diff) * Math.min(Math.abs(diff), speed * dt);
   guestPaddle.y = Math.max(0, Math.min(ch - guestPaddle.h, guestPaddle.y + move));
   guestPaddleY  = (guestPaddle.y + guestPaddle.h / 2) / ch;
+
+  if (!isHost) return;
+  const pu = powerUp.guest;
+  if (pu.type === 'B' && performance.now() < pu.endsAt) {
+    if (!aiLastShotTime) aiLastShotTime = 0;
+    const cooldown = aiDifficulty === 'hard' ? 500 : aiDifficulty === 'medium' ? 700 : 900;
+    if (performance.now() - aiLastShotTime >= cooldown) {
+      const shotY = guestPaddle.y + guestPaddle.h / 2;
+      const hasTarget = asteroids.some(a => Math.abs(a.y - shotY) < a.r * 4)
+                     || surpriseBoxes.some(b => Math.abs(b.y - shotY) < b.r * 3.5);
+      if (hasTarget || Math.random() < 0.4) {
+        fireShot('guest');
+        aiLastShotTime = performance.now();
+      }
+    }
+  }
 }
 
-// ── Spawn box of specific type ──
 function spawnSurpriseBoxOfType(type) {
   if (surpriseBoxes.length >= 3) return;
   const cw = canvas.width, ch = canvas.height;
@@ -1380,7 +1311,6 @@ function spawnSurpriseBoxOfType(type) {
   });
 }
 
-// ── AI Mode setup / teardown ──
 function showAIMode() {
   showScreen('aiDiffScreen');
 }
@@ -1398,7 +1328,7 @@ function startAIGame() {
   isHost = true;
   opponentName = '🤖 AI (' + aiDifficulty + ')';
   peer = null; conn = null;
-  // Small delay so audio context is running before startGameMusic() fires
+  
   setTimeout(() => {
     startGame();
     startAgents();
@@ -1410,39 +1340,32 @@ function stopAIGame() {
   stopAgents();
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  HIGHLIGHT RECORDER + REPLAY SYSTEM
-// ═══════════════════════════════════════════════════════
-const HIGHLIGHT_DURATION = 3000;   // 3 seconds per highlight clip
-const RECORD_FPS         = 20;     // frames recorded per second
+const HIGHLIGHT_DURATION = 3000;   
+const RECORD_FPS         = 20;     
 const MAX_HIGHLIGHTS     = 3;
 
-// Ring buffer of recent frames (last ~4s at 20fps = 80 frames)
 const FRAME_BUFFER_MAX   = 80;
-const frameBuffer        = new Array(FRAME_BUFFER_MAX); // pre-allocated ring buffer
-let   fbHead             = 0;   // next write position
-let   fbCount            = 0;   // number of valid frames stored
+const frameBuffer        = new Array(FRAME_BUFFER_MAX); 
+let   fbHead             = 0;   
+let   fbCount            = 0;   
 let   recordInterval     = null;
-let   highlights         = [];     // [{frames, label, timestamp}] — 3 best moments
+let   highlights         = [];     
 let   replayActive       = false;
 let   replayCanvas       = null;
 let   replayCtx          = null;
 let   replayAnimId       = null;
 
-// Capture a lightweight snapshot every 50ms during game
-function startRecording() {
+function startRecording() { /* stub */
   if (recordInterval) clearInterval(recordInterval);
   fbHead = 0; fbCount = 0;
   highlights = [];
-  recordInterval = setInterval(captureFrame, 1000 / RECORD_FPS);
+  recordInterval = null;
 }
 
-function stopRecording() {
+function stopRecording() { /* stub */
   if (recordInterval) { clearInterval(recordInterval); recordInterval = null; }
 }
 
-// Returns the last N frames in chronological order
 function getLastFrames(n) {
   const count = Math.min(n, fbCount);
   const result = [];
@@ -1452,16 +1375,15 @@ function getLastFrames(n) {
   return result;
 }
 
-// Cache static asteroid pts separately — never copy per-frame
-const astPtsCache = new Map(); // asteroid index → pts (only updated when count changes)
+const astPtsCache = new Map(); 
 let   lastAstCacheCount = -1;
 
-function captureFrame() {
+function captureFrame() { /* stub */
   if (!gameRunning || countdownVal > 0) return;
   const cw = canvas.width, ch = canvas.height;
   const now = performance.now();
 
-  // Refresh pts cache only when asteroid count changes
+  
   if (asteroids.length !== lastAstCacheCount) {
     astPtsCache.clear();
     asteroids.forEach((a, i) => astPtsCache.set(i, a.pts));
@@ -1474,12 +1396,12 @@ function captureFrame() {
     hpy: +(hostPaddle.y/ch).toFixed(4),  hph: +(hostPaddle.h/ch).toFixed(4),
     gpy: +(guestPaddle.y/ch).toFixed(4), gph: +(guestPaddle.h/ch).toFixed(4),
     sh: score.host, sg: score.guest,
-    // Only store position+angle — pts fetched from cache at replay time
+    
     ast: asteroids.map((a, i) => ({
       x: +(a.x/cw).toFixed(3), y: +(a.y/ch).toFixed(3),
       r: +(a.r/cw).toFixed(3), angle: +(a.angle).toFixed(3), i
     })),
-    frags: fragments.slice(0, 6).map((f, i) => ({ // cap at 6 frags for memory
+    frags: fragments.slice(0, 6).map((f, i) => ({ 
       x: +(f.x/cw).toFixed(3), y: +(f.y/ch).toFixed(3),
       r: +(f.r/cw).toFixed(3), angle: +(f.angle).toFixed(3),
       age: +Math.min((now - f.bornAt) / FRAGMENT_LIFE, 1).toFixed(3), i
@@ -1490,15 +1412,14 @@ function captureFrame() {
   if (fbCount < FRAME_BUFFER_MAX) fbCount++;
 }
 
-// Called when a goal is scored — save highlight clip around this moment
-function saveHighlight(label) {
+function saveHighlight(label) { /* stub */
   if (highlights.length >= MAX_HIGHLIGHTS) return;
   const clipFrames = getLastFrames(Math.floor(RECORD_FPS * 2));
   if (clipFrames.length < 4) return;
-  // Snapshot the pts cache so replay can draw asteroids correctly
+  
   const ptsSnapshot = {};
   astPtsCache.forEach((pts, i) => { ptsSnapshot[i] = pts; });
-  // Also snapshot fragment pts
+  
   const fragPtsSnapshot = {};
   fragments.forEach((f, i) => { fragPtsSnapshot[i] = f.pts; });
   highlights.push({
@@ -1507,8 +1428,7 @@ function saveHighlight(label) {
   });
 }
 
-// Save highlights to Firebase after game
-async function saveHighlightsToFirebase(playerName, iWon) {
+async function saveHighlightsToFirebase_REMOVED(playerName, iWon) {
   if (!highlights.length) return;
   if (!firebaseReady || !db) return;
   try {
@@ -1526,19 +1446,18 @@ async function saveHighlightsToFirebase(playerName, iWon) {
   } catch(e) { console.warn('Highlights save failed:', e); }
 }
 
-// ── Replay playback ──
 let replayClipIdx  = 0;
 let replayFrameIdx = 0;
 let replayTimer    = null;
 
-function showReplay() {
+function showReplay() { /* stub */
   if (!highlights.length) { showToast('No highlights recorded'); return; }
   replayActive = true;
   replayCanvas = document.getElementById('replayCanvas');
   replayCtx    = replayCanvas ? replayCanvas.getContext('2d') : null;
   if (!replayCanvas || !replayCtx) return;
 
-  // Match canvas to screen size
+  
   replayCanvas.width  = window.innerWidth;
   replayCanvas.height = window.innerHeight;
 
@@ -1557,7 +1476,7 @@ function playNextClip() {
   const sub = document.getElementById('replaySubtitle');
   if (sub) sub.textContent = `Highlight ${replayClipIdx + 1} / ${highlights.length}  ·  ${clip.label}`;
 
-  // Slow-mo: play at 40% speed
+  
   const SLOW_FACTOR = 2.5;
   const frameDelay  = (1000 / RECORD_FPS) * SLOW_FACTOR;
 
@@ -1580,27 +1499,27 @@ function drawReplayFrame(f, progress) {
   const rctx = replayCtx;
   const rw = replayCanvas.width, rh = replayCanvas.height;
 
-  // Background
+  
   rctx.fillStyle = '#020208';
   rctx.fillRect(0, 0, rw, rh);
 
-  // Vignette
+  
   const vig = rctx.createRadialGradient(rw/2, rh/2, rh*0.3, rw/2, rh/2, rh*0.85);
   vig.addColorStop(0, 'transparent');
   vig.addColorStop(1, 'rgba(0,0,0,0.6)');
   rctx.fillStyle = vig; rctx.fillRect(0, 0, rw, rh);
 
-  // Center line
+  
   rctx.setLineDash([10,12]);
   rctx.strokeStyle = 'rgba(255,255,255,0.06)'; rctx.lineWidth = 1.5;
   rctx.beginPath(); rctx.moveTo(rw/2, 0); rctx.lineTo(rw/2, rh); rctx.stroke();
   rctx.setLineDash([]);
 
-  // Slow-mo color grade — slightly warm tint
+  
   rctx.fillStyle = 'rgba(255,140,0,0.04)';
   rctx.fillRect(0, 0, rw, rh);
 
-  // Scan lines effect — single fillRect using a cached repeating pattern
+  
   if (!scanlinePattern) {
     const tmp = document.createElement('canvas');
     tmp.width = 1; tmp.height = 4;
@@ -1612,7 +1531,7 @@ function drawReplayFrame(f, progress) {
   rctx.fillStyle = scanlinePattern;
   rctx.fillRect(0, 0, rw, rh);
 
-  // Asteroids — get pts from clip's snapshot
+  
   const clip = highlights[replayClipIdx];
   if (f.ast && clip) {
     f.ast.forEach(a => {
@@ -1633,7 +1552,7 @@ function drawReplayFrame(f, progress) {
     });
   }
 
-  // Fragments
+  
   if (f.frags && clip) {
     f.frags.forEach(fr => {
       const fa = 1 - fr.age;
@@ -1642,7 +1561,7 @@ function drawReplayFrame(f, progress) {
       rctx.save();
       rctx.globalAlpha = fa;
       rctx.translate(fr.x*rw, fr.y*rh); rctx.rotate(fr.angle);
-      rctx.shadowColor = '#ff8c00'; rctx.shadowBlur = 10;
+      rctx.shadowColor = '#ff8c00'; rctx.shadowBlur = 6;
       rctx.beginPath();
       pts.forEach(([ang, ratio], i) => {
         const px = Math.cos(ang)*fr.r*rw*ratio, py = Math.sin(ang)*fr.r*rw*ratio;
@@ -1651,38 +1570,38 @@ function drawReplayFrame(f, progress) {
       rctx.closePath();
       rctx.fillStyle = '#c87020'; rctx.fill();
       rctx.strokeStyle = `rgba(255,180,60,${fa})`; rctx.lineWidth = 1; rctx.stroke();
-      rctx.shadowBlur = 0; rctx.globalAlpha = 1;
+      rctx.shadowBlur = 4; rctx.globalAlpha = 1;
       rctx.restore();
     });
   }
 
-  // Paddles
+  
   const PADDLE_W_REP = rw * 0.025;
   function drawRPaddle(py, ph, x, c1, c2) {
     const grad = rctx.createLinearGradient(x, py*rh, x, py*rh + ph*rh);
     grad.addColorStop(0, c1); grad.addColorStop(1, c2);
-    rctx.shadowColor = c1; rctx.shadowBlur = 20;
+    rctx.shadowColor = c1; rctx.shadowBlur = 12;
     rctx.fillStyle = grad;
     rctx.beginPath();
     rctx.roundRect(x, py*rh, PADDLE_W_REP, ph*rh, PADDLE_W_REP/2);
-    rctx.fill(); rctx.shadowBlur = 0;
+    rctx.fill(); rctx.shadowBlur = 4;
   }
   const inset = rw * 0.12;
   drawRPaddle(f.hpy, f.hph, inset, '#6c63ff', '#9c5fff');
   drawRPaddle(f.gpy, f.gph, rw - inset - PADDLE_W_REP, '#ff6584', '#ff8fa3');
 
-  // Ball with dramatic glow
-  const bx = f.bx*rw, by = f.by*rh, br = f.br*rw * 1.3; // slightly bigger in replay
-  rctx.shadowColor = '#ffffff'; rctx.shadowBlur = 40;
+  
+  const bx = f.bx*rw, by = f.by*rh, br = f.br*rw * 1.3; 
+  rctx.shadowColor = '#ffffff'; rctx.shadowBlur = 24;
   const bg = rctx.createRadialGradient(bx-br*0.3, by-br*0.3, 0, bx, by, br);
   bg.addColorStop(0, '#ffffff');
   bg.addColorStop(0.5, 'rgba(200,210,255,0.9)');
   bg.addColorStop(1, 'rgba(108,99,255,0.4)');
   rctx.fillStyle = bg;
   rctx.beginPath(); rctx.arc(bx, by, br, 0, Math.PI*2); rctx.fill();
-  rctx.shadowBlur = 0;
+  rctx.shadowBlur = 4;
 
-  // Score
+  
   rctx.textAlign = 'center'; rctx.textBaseline = 'middle';
   const scoreSize = Math.min(rw*0.09, 55);
   rctx.font = `bold ${scoreSize}px monospace`;
@@ -1690,38 +1609,31 @@ function drawReplayFrame(f, progress) {
   rctx.fillText(f.sh, rw*0.28, rh*0.08);
   rctx.fillStyle = 'rgba(255,101,132,0.9)'; rctx.shadowColor='#ff6584';
   rctx.fillText(f.sg, rw*0.72, rh*0.08);
-  rctx.shadowBlur = 0;
+  rctx.shadowBlur = 4;
 
-  // SLOW-MO indicator
+  
   rctx.font = `bold ${Math.min(rw*0.028,13)}px monospace`;
   rctx.fillStyle = 'rgba(255,200,60,0.8)';
   rctx.textAlign = 'right';
   rctx.fillText('⏱ SLOW MO', rw - 12, rh - 16);
 
-  // Progress bar at bottom
+  
   rctx.fillStyle = 'rgba(255,255,255,0.1)';
   rctx.fillRect(0, rh-4, rw, 4);
   rctx.fillStyle = '#6c63ff';
   rctx.fillRect(0, rh-4, rw * progress, 4);
 }
 
-function stopReplay() {
-  replayActive = false;
-  if (replayTimer) { clearTimeout(replayTimer); replayTimer = null; }
-  showScreen('gameOverScreen');
-}
+function stopReplay() { showScreen("gameOverScreen"); }
 
-// ═══════════════════════════════════════════════════════
-//  ROOM PERSISTENCE
-// ═══════════════════════════════════════════════════════
-const ROOM_TTL = 120; // seconds
+const ROOM_TTL = 120; 
 
 function startRoomCountdown() {
   roomSecondsLeft = ROOM_TTL;
   clearTimeout(roomExpireTimer);
   clearInterval(roomCountdownInt);
 
-  // Update countdown display every second
+  
   roomCountdownInt = setInterval(() => {
     roomSecondsLeft--;
     const m = Math.floor(roomSecondsLeft / 60);
@@ -1731,7 +1643,7 @@ function startRoomCountdown() {
     if (roomSecondsLeft <= 0) destroyRoom();
   }, 1000);
 
-  // Hard destroy at TTL
+  
   roomExpireTimer = setTimeout(destroyRoom, ROOM_TTL * 1000);
 }
 
@@ -1750,7 +1662,7 @@ function hideResumeBanner() {
 }
 
 function resumeWaiting() {
-  // Go back to waiting screen — peer is still alive
+  
   document.getElementById('roomCodeDisplay').textContent = myCode;
   showScreen('waitingScreen');
 }
@@ -1765,9 +1677,6 @@ function destroyRoom() {
   setConnStatus(false, '–');
 }
 
-// ═══════════════════════════════════════════════════════
-//  MUSIC PROMPT HELPERS
-// ═══════════════════════════════════════════════════════
 function showMusicPrompt() {
   if (audioCtx && audioCtx.state === 'running') return;
   const p = document.getElementById('musicPrompt');
@@ -1782,10 +1691,6 @@ function tapToStartMusic() {
   initAudio();
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  SOUND EFFECTS (Web Audio — synthesized, zero assets)
-// ═══════════════════════════════════════════════════════
 function sfx(type) {
   if (!audioCtx || muted) return;
   if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -1794,7 +1699,7 @@ function sfx(type) {
   g.connect(masterGain);
 
   if (type === 'hit') {
-    // Sharp click
+    
     const o = audioCtx.createOscillator();
     o.type = 'square'; o.frequency.value = 320;
     o.frequency.exponentialRampToValueAtTime(160, now + 0.06);
@@ -1810,7 +1715,7 @@ function sfx(type) {
     o.start(now); o.stop(now + 0.07);
 
   } else if (type === 'goal') {
-    // Rising fanfare
+    
     [0, 0.12, 0.24].forEach((t, i) => {
       const o = audioCtx.createOscillator();
       o.type = 'sine';
@@ -1823,7 +1728,7 @@ function sfx(type) {
     });
 
   } else if (type === 'losePt') {
-    // Descending wah
+    
     const o = audioCtx.createOscillator();
     o.type = 'sawtooth'; o.frequency.value = 300;
     o.frequency.exponentialRampToValueAtTime(80, now + 0.3);
@@ -1832,7 +1737,7 @@ function sfx(type) {
     o.start(now); o.stop(now + 0.35);
 
   } else if (type === 'explosion') {
-    // Noise burst for asteroid break
+    
     const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.15, audioCtx.sampleRate);
     const d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
@@ -1844,7 +1749,7 @@ function sfx(type) {
     src.start(now);
 
   } else if (type === 'powerup') {
-    // Ascending sparkle
+    
     [0,0.08,0.16,0.24].forEach((t,i) => {
       const o = audioCtx.createOscillator();
       o.type = 'sine'; o.frequency.value = 400 + i*200;
@@ -1855,7 +1760,7 @@ function sfx(type) {
     });
 
   } else if (type === 'streak') {
-    // "WOOSH" shrink
+    
     const o = audioCtx.createOscillator();
     o.type = 'sawtooth'; o.frequency.value = 800;
     o.frequency.exponentialRampToValueAtTime(200, now + 0.4);
@@ -1864,7 +1769,7 @@ function sfx(type) {
     o.start(now); o.stop(now + 0.42);
 
   } else if (type === 'shot') {
-    // BLAST — layered noise burst + pitch drop
+    
     const buf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.18), audioCtx.sampleRate);
     const d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
@@ -1876,7 +1781,7 @@ function sfx(type) {
     g.gain.setValueAtTime(0.55, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
     noise.start(now);
-    // Low thump underneath
+    
     const thump = audioCtx.createOscillator();
     const tg = audioCtx.createGain();
     thump.type = 'sine'; thump.frequency.setValueAtTime(220, now);
@@ -1887,16 +1792,10 @@ function sfx(type) {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-//  HAPTIC FEEDBACK
-// ═══════════════════════════════════════════════════════
 function haptic(pattern) {
   if (navigator.vibrate) navigator.vibrate(pattern);
 }
 
-// ═══════════════════════════════════════════════════════
-//  SCREEN SHAKE
-// ═══════════════════════════════════════════════════════
 function triggerShake(intensity) {
   shakeTime = SHAKE_DURATION;
   shakeIntensity = intensity;
@@ -1911,11 +1810,8 @@ function getShakeOffset() {
   };
 }
 
-// ═══════════════════════════════════════════════════════
-//  PARTICLES (goal explosion)
-// ═══════════════════════════════════════════════════════
 function spawnGoalParticles(x, y, color) {
-  for (let i = 0; i < 14; i++) {  // reduced for performance
+  for (let i = 0; i < 14; i++) {  
     const ang = (i / 28) * Math.PI * 2 + Math.random() * 0.3;
     const spd = 3 + Math.random() * 6;
     particles.push({
@@ -1931,11 +1827,11 @@ function spawnGoalParticles(x, y, color) {
 }
 
 function updateParticles(dt) {
-  if (particles.length > 40) particles.length = 40; // hard cap
+  if (particles.length > 40) particles.length = 40; 
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx * dt; p.y += p.vy * dt;
-    p.vy += 0.2 * dt; // gravity
+    p.vy += 0.2 * dt; 
     p.alpha -= p.decay * dt;
     if (p.alpha <= 0) particles.splice(i, 1);
   }
@@ -1944,7 +1840,7 @@ function updateParticles(dt) {
 function drawParticles() {
   if (!particles.length) return;
   ctx.save();
-  ctx.shadowBlur = 8;
+  ctx.shadowBlur = 5;
   particles.forEach(p => {
     ctx.globalAlpha = Math.max(0, p.alpha);
     ctx.fillStyle   = p.color;
@@ -1956,9 +1852,6 @@ function drawParticles() {
   ctx.restore();
 }
 
-// ═══════════════════════════════════════════════════════
-//  BALL TRAIL
-// ═══════════════════════════════════════════════════════
 function updateBallTrail() {
   if (ball.x === undefined) return;
   ballTrail.push({ x: ball.x, y: ball.y, r: ball.r });
@@ -1983,12 +1876,9 @@ function drawBallTrail() {
   ctx.restore();
 }
 
-// ═══════════════════════════════════════════════════════
-//  STREAK SYSTEM
-// ═══════════════════════════════════════════════════════
 function onPointScored(scorer) {
   streak[scorer]++;
-  streak[scorer === 'host' ? 'guest' : 'host'] = 0; // reset opponent streak
+  streak[scorer === 'host' ? 'guest' : 'host'] = 0; 
   if (streak[scorer] >= STREAK_NEEDED) {
     streak[scorer] = 0;
     const victim = scorer === 'host' ? 'guest' : 'host';
@@ -2001,7 +1891,7 @@ function onPointScored(scorer) {
 function applyStreakPenalty(victim) {
   const paddle = victim === 'host' ? hostPaddle : guestPaddle;
   const orig = canvas.height * PADDLE_H_RATIO;
-  paddle.h = orig * 0.55; // shrink 45%
+  paddle.h = orig * 0.55; 
   sfx('streak'); haptic([30, 20, 60]);
   if (aiMode) runCommentatorAgent('streak', `${victim} shrunk`);
   if (shrinkTimer[victim]) clearTimeout(shrinkTimer[victim]);
@@ -2019,10 +1909,16 @@ function showStreakBanner(iMine) {
   setTimeout(() => el.classList.remove('show'), 2200);
 }
 
-// ═══════════════════════════════════════════════════════
-//  REMATCH
-// ═══════════════════════════════════════════════════════
 function requestRematch() {
+  if (aiMode) {
+    startGame();
+    return;
+  }
+  if (!conn || !conn.open) {
+    showToast('Connection lost — start a new game');
+    document.getElementById('rematchStatus').textContent = 'Connection lost';
+    return;
+  }
   document.getElementById('rematchStatus').textContent = '⏳ Waiting for opponent…';
   document.getElementById('rematchBtn').disabled = true;
   if (isHost) {
@@ -2035,10 +1931,10 @@ function requestRematch() {
 
 function handleRematchReq() {
   if (isHost) {
-    // Both agreed if host also requested, or just accept
+    
     startGame(); sendToGuest({ type: 'rematch_go' });
   } else {
-    // Guest: either host already asked, so go; or ask host
+    
     sendToHost({ type: 'rematch_ack' });
     document.getElementById('rematchStatus').textContent = '⏳ Waiting for host…';
     document.getElementById('rematchBtn').disabled = true;
@@ -2049,9 +1945,6 @@ function handleRematchGo() {
   startGame();
 }
 
-// ═══════════════════════════════════════════════════════
-//  VOICE CHAT
-// ═══════════════════════════════════════════════════════
 let voiceAnalyser = null;
 let voiceAnalyserData = null;
 let speakCheckInterval = null;
@@ -2079,9 +1972,6 @@ function stopTalking() {}
 
 function hideVoiceBtn() {}
 
-// ═══════════════════════════════════════════════════════
-//  MATCH HISTORY
-// ═══════════════════════════════════════════════════════
 function saveMatchHistory(iWon) {
   if (!currentPlayer) return;
   const key = 'history:' + currentPlayer.name.toLowerCase();
@@ -2097,7 +1987,7 @@ function saveMatchHistory(iWon) {
     oppScore: isHost ? score.guest : score.host,
     won: iWon
   });
-  if (history.length > 20) history = history.slice(0, 20); // keep last 20
+  if (history.length > 20) history = history.slice(0, 20); 
   try { store.set(key, JSON.stringify(history)); } catch(e){}
 }
 
@@ -2133,19 +2023,16 @@ async function loadHistory() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-//  ASTEROIDS
-// ═══════════════════════════════════════════════════════
 function spawnAsteroid() {
   if (asteroids.length >= MAX_ASTEROIDS) return;
   const cw = canvas.width, ch = canvas.height;
   const r  = cw * 0.045;
-  // Spawn in middle zone, away from paddles
+  
   const x  = cw * 0.25 + Math.random() * cw * 0.5;
   const y  = r * 2 + Math.random() * (ch - r * 4);
   const spd = cw * 0.0035;
   const ang = Math.random() * Math.PI * 2;
-  // Generate rocky shape: angle + radius-ratio pairs
+  
   const numPts = 9 + Math.floor(Math.random() * 4);
   const pts = [];
   for (let i = 0; i < numPts; i++) {
@@ -2182,7 +2069,7 @@ function checkAsteroidBallCollision(b, ast) {
   const minDist = b.r + ast.r;
   if (dist < minDist && dist > 0) {
     const nx = dx / dist, ny = dy / dist;
-    // Only bounce if ball is approaching (dot product negative = moving toward center)
+    
     const dot = b.vx * nx + b.vy * ny;
     if (dot < 0) {
       b.vx -= 2 * dot * nx;
@@ -2190,7 +2077,7 @@ function checkAsteroidBallCollision(b, ast) {
       const cur = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
       if (cur > 0) { b.vx = (b.vx / cur) * b.speed; b.vy = (b.vy / cur) * b.speed; }
     }
-    // Always push ball outside asteroid surface
+    
     const overlap = minDist - dist + 2;
     b.x += nx * overlap; b.y += ny * overlap;
     return true;
@@ -2198,10 +2085,6 @@ function checkAsteroidBallCollision(b, ast) {
   return false;
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  SURPRISE BOXES
-// ═══════════════════════════════════════════════════════
 function spawnSurpriseBox() {
   const cw = canvas.width, ch = canvas.height;
   const r   = cw * 0.038;
@@ -2211,7 +2094,7 @@ function spawnSurpriseBox() {
   const ang = Math.random() * Math.PI * 2;
   const r2 = Math.random();
   const type = r2 < 0.33 ? 'A' : r2 < 0.66 ? 'B' : r2 < 0.83 ? 'C' : 'D';
-  // A=expand, B=shots, C=freeze ball, D=shrink opponent
+  
   surpriseBoxes.push({
     x, y, r, type,
     vx: Math.cos(ang) * spd,
@@ -2231,14 +2114,14 @@ function updateSurpriseBoxes(dt) {
     if (box.y - box.r < 0)  { box.y = box.r;      box.vy =  Math.abs(box.vy); }
     if (box.y + box.r > ch) { box.y = ch - box.r; box.vy = -Math.abs(box.vy); }
 
-    // Ball collision
+    
     const dx = ball.x - box.x, dy = ball.y - box.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
     if (dist < ball.r + box.r) {
-      // Determine which paddle last hit the ball (use ball direction)
-      const eater = ball.vx > 0 ? 'host' : 'guest'; // ball going right = host just hit it
+      
+      const eater = ball.vx > 0 ? 'host' : 'guest'; 
       activatePowerUp(eater, box.type);
-      // Bounce ball away
+      
       const nx = dx/dist, ny = dy/dist;
       const dot = ball.vx*nx + ball.vy*ny;
       ball.vx -= 2*dot*nx; ball.vy -= 2*dot*ny;
@@ -2261,14 +2144,14 @@ function activatePowerUp(who, boxType) {
     showToast(who === (isHost?'host':'guest') ? '🔫 Unlimited shots! 30s' : '🔫 Opponent got shots!');
     sfx('powerup'); haptic([20,10,20,10,40]);
   } else if (boxType === 'C') {
-    // Freeze ball for 2s
+    
     const savedVx = ball.vx, savedVy = ball.vy;
     ball.vx = 0; ball.vy = 0;
     showToast(who === (isHost?'host':'guest') ? '❄️ Ball frozen! 2s' : '❄️ Ball frozen!');
     sfx('powerup');
     setTimeout(() => { if (gameRunning) { ball.vx = savedVx; ball.vy = savedVy; } }, 2000);
   } else if (boxType === 'D') {
-    // Shrink opponent's paddle
+    
     const victim2 = who === 'host' ? 'guest' : 'host';
     applyStreakPenalty(victim2);
     showToast(who === (isHost?'host':'guest') ? '☠️ Opponent shrunk! 8s' : '☠️ Your paddle shrunk!');
@@ -2281,7 +2164,7 @@ function updatePowerUps() {
   for (const who of ['host','guest']) {
     const pu = powerUp[who];
     if (pu.type && now >= pu.endsAt) {
-      // Expire
+      
       if (pu.type === 'A') {
         const paddle = who === 'host' ? hostPaddle : guestPaddle;
         paddle.h = canvas.height * PADDLE_H_RATIO;
@@ -2292,12 +2175,9 @@ function updatePowerUps() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-//  SHOTS
-// ═══════════════════════════════════════════════════════
 function fireShot(forcedWho) {
   if (!gameRunning || countdownVal > 0) return;
-  // forcedWho lets host fire on behalf of guest when guest sends 'fireshot'
+  
   const who = forcedWho || (isHost ? 'host' : 'guest');
   const pu = powerUp[who];
   if (pu.type !== 'B' || performance.now() > pu.endsAt) return;
@@ -2310,9 +2190,9 @@ function fireShot(forcedWho) {
   shots.push({ x: sx, y: sy, vx: dir * speed, r: canvas.width * 0.012, owner: who, alive: true });
   sfx('shot'); haptic(25);
 
-  // Tell the other side
+  
   sendToGuest({ type: 'shot', who, sx: sx/canvas.width, sy: sy/canvas.height });
-  // shots unlimited — no depletion
+  
 }
 
 function updateShots(dt) {
@@ -2320,10 +2200,10 @@ function updateShots(dt) {
   for (let i = shots.length - 1; i >= 0; i--) {
     const s = shots[i];
     s.x += s.vx * dt;
-    // Remove when shot leaves screen (no mid-screen cap — full court range)
+    
     if (s.x < -s.r || s.x > cw + s.r) { shots.splice(i, 1); continue; }
 
-    // Hit asteroid?
+    
     let hitAst = false;
     for (let j = asteroids.length - 1; j >= 0; j--) {
       const ast = asteroids[j];
@@ -2334,7 +2214,7 @@ function updateShots(dt) {
       }
     }
     if (!hitAst) {
-      // Hit surprise box?
+      
       for (let j = surpriseBoxes.length - 1; j >= 0; j--) {
         const box = surpriseBoxes[j];
         const dx = s.x - box.x, dy = s.y - box.y;
@@ -2346,9 +2226,6 @@ function updateShots(dt) {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-//  FRAGMENTS
-// ═══════════════════════════════════════════════════════
 function breakAsteroid(ast, idx) {
   asteroids.splice(idx, 1);
   sfx('explosion'); haptic([40, 20, 40]);
@@ -2373,7 +2250,7 @@ function breakAsteroid(ast, idx) {
       bornAt: performance.now()
     });
   }
-  if (isHost) sendFragmentShapes(); // send shape data once to guest
+  if (isHost) sendFragmentShapes(); 
 }
 
 function updateFragments(dt) {
@@ -2388,14 +2265,14 @@ function updateFragments(dt) {
     if (f.x + f.r > cw) { f.x = cw - f.r; f.vx = -Math.abs(f.vx); }
     if (f.y - f.r < 0)  { f.y = f.r;      f.vy =  Math.abs(f.vy); }
     if (f.y + f.r > ch) { f.y = ch - f.r; f.vy = -Math.abs(f.vy); }
-    // Ball vs fragment
+    
     const dx = ball.x - f.x, dy = ball.y - f.y;
     const dist = Math.sqrt(dx*dx+dy*dy);
     if (dist < ball.r + f.r && dist > 0) {
       const nx = dx/dist, ny = dy/dist;
       const dot = ball.vx*nx + ball.vy*ny;
       ball.vx -= 2*dot*nx; ball.vy -= 2*dot*ny;
-      // Keep same speed — fragment hit doesn't slow ball
+      
       const cur = Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy);
       if (cur > 0) { ball.vx = (ball.vx/cur)*ball.speed; ball.vy = (ball.vy/cur)*ball.speed; }
       fragments.splice(i, 1);
@@ -2422,13 +2299,13 @@ function drawAsteroid(ast) {
   ctx.fillStyle = grad;
   ctx.fill();
   ctx.shadowColor = '#ff8833';
-  ctx.shadowBlur = 16;
+  ctx.shadowBlur = 10;
   ctx.strokeStyle = 'rgba(255,160,60,0.45)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.shadowBlur = 0;
-  // Small craters
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur = 4;
+  
+  ctx.shadowBlur = 4;
   [[ast.r * 0.25, -ast.r * 0.35, ast.r * 0.12],
    [-ast.r * 0.3, ast.r * 0.2,  ast.r * 0.09],
    [ast.r * 0.1,  ast.r * 0.4,  ast.r * 0.07]].forEach(([cx, cy, cr]) => {
@@ -2440,9 +2317,6 @@ function drawAsteroid(ast) {
   ctx.restore();
 }
 
-// ═══════════════════════════════════════════════════════
-//  PEER SETUP
-// ═══════════════════════════════════════════════════════
 function generateCode() {
   return Math.random().toString(36).substr(2, 6).toUpperCase();
 }
@@ -2467,19 +2341,16 @@ function initPeer(id, onOpen) {
   });
   peer.on('disconnected', () => {
     setConnStatus(false, 'Reconnecting…');
-    // PeerJS lost signaling server connection — reconnect to keep room alive
+    
     if (peer && !peer.destroyed) {
       try { peer.reconnect(); } catch(e) {}
     }
   });
 }
 
-// ═══════════════════════════════════════════════════════
-//  HOST FLOW
-// ═══════════════════════════════════════════════════════
 function createGame() {
-  initAudio(); // ensure audio context created from this gesture
-  destroyRoom(); // close any lingering room before creating a new one
+  initAudio(); 
+  destroyRoom(); 
   isHost = true; myCode = generateCode();
   document.getElementById('roomCodeDisplay').textContent = myCode;
   showScreen('waitingScreen');
@@ -2496,7 +2367,7 @@ function copyCode() {
 }
 
 function cancelHost() {
-  // Don't destroy the peer — keep room alive for 2 minutes
+  
   if (frameId) { cancelAnimationFrame(frameId); frameId = null; }
   gameRunning = false;
   showResumeBanner();
@@ -2504,18 +2375,15 @@ function cancelHost() {
   showScreen('lobbyScreen');
 }
 
-// ═══════════════════════════════════════════════════════
-//  GUEST FLOW
-// ═══════════════════════════════════════════════════════
 function joinGame() {
-  initAudio(); // ensure audio context created from this gesture
+  initAudio(); 
   const rawCode = document.getElementById('joinCodeInput').value.trim().toUpperCase();
   if (rawCode.length < 4) { showToast('Enter a valid code'); return; }
   isHost = false; myCode = rawCode;
   document.getElementById('joiningLabel').textContent = 'Room: ' + rawCode;
   showScreen('joiningScreen'); setConnStatus(false, 'Connecting…');
   initPeer(undefined, () => {
-    // Register voice call handler BEFORE connecting data channel
+    
     conn = peer.connect('CPONG-' + rawCode, { reliable: false, serialization: 'json', ordered: false });
     setupConn();
   });
@@ -2526,23 +2394,20 @@ function cancelJoin() {
   setConnStatus(false, '–'); showScreen('lobbyScreen');
 }
 
-// ═══════════════════════════════════════════════════════
-//  CONNECTION SETUP
-// ═══════════════════════════════════════════════════════
 function setupConn() {
   conn.on('open', () => {
     setConnStatus(true, '🎮 ' + (currentPlayer ? currentPlayer.name : (isHost ? 'Host' : 'Guest')));
     if (isHost) {
       showToast('🎮 Opponent connected!');
-      // Small delay so guest data channel is fully ready before we send 'start'
+      
       setTimeout(() => {
         startGame();
       }, 400);
     } else {
       showToast('✅ Connected!');
-      // Send name + ready signal to host
+      
       sendToHost({ type: 'myname', name: currentPlayer ? currentPlayer.name : 'Guest' });
-      // Also send ready so host knows data channel works both ways
+      
       setTimeout(() => sendToHost({ type: 'guestready' }), 200);
     }
   });
@@ -2559,7 +2424,7 @@ function setupConn() {
         if (isHost) { opponentName = data.name; showToast('👾 ' + data.name + ' joined!'); }
         break;
       case 'guestready':
-        // Guest confirmed data channel ready — if game hasn't started, start now
+        
         if (isHost && !gameRunning) { startGame(); }
         break;
       case 'streak':
@@ -2571,9 +2436,9 @@ function setupConn() {
       case 'rematch_go':  handleRematchGo(); break;
       case 'taunt':   activateTaunt(data.sender); break;
       case 'ping':    if (!isHost) try { conn.send({ type:'pong' }); } catch(e) {} break;
-      case 'pong':    break; // host receives — connection confirmed alive
+      case 'pong':    break; 
       case 'powerup': activatePowerUp(data.eater, data.boxType); break;
-      case 'fireshot': if (isHost) fireShot('guest'); break; // fire on guest's behalf
+      case 'fireshot': if (isHost) fireShot('guest'); break; 
       case 'fraginit':
         if (!isHost) {
           const cw2 = canvas.width;
@@ -2583,7 +2448,7 @@ function setupConn() {
         }
         break;
       case 'shot':
-        // Guest receives shot info — just add for rendering (host owns physics)
+        
         if (!isHost) {
           const cw = canvas.width, ch = canvas.height;
           const dir = data.who === 'host' ? 1 : -1;
@@ -2602,7 +2467,7 @@ function setupConn() {
   });
   conn.on('error', (err) => { showToast('Error: ' + err); console.error(err); });
 
-  // Heartbeat — host sends ping every 3s, guest replies; detect dead connection
+  
   if (isHost) {
     const hbInterval = setInterval(() => {
       if (!gameRunning && !conn?.open) { clearInterval(hbInterval); return; }
@@ -2611,21 +2476,19 @@ function setupConn() {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-//  GAME INIT
-// ═══════════════════════════════════════════════════════
 function startGame(config) {
   resizeCanvas();
   score.host = 0; score.guest = 0;
   guestPaddleY = 0.5; myTouchY = null; isDragging = false;
   asteroids = []; fragments = []; surpriseBoxes = []; shots = []; particles = [];
+  aiLastShotTime = 0; _dtAcc = 0;
   ballTrail.length = 0;
   streak.host = 0; streak.guest = 0;
   rematchPending = false;
-  // Save received guest name before reset (myname message arrives before startGame is called)
+  
   const savedOpponent = opponentName;
-  if (isHost && !aiMode) opponentName = 'Guest'; // will be updated by myname msg
-  // Restore if we already received the name
+  if (isHost && !aiMode) opponentName = 'Guest'; 
+  
   if (isHost && !aiMode && savedOpponent && savedOpponent !== '???' && savedOpponent !== 'Guest') {
     opponentName = savedOpponent;
   }
@@ -2634,14 +2497,14 @@ function startGame(config) {
   powerUp.guest = { type: null, endsAt: 0 };
   gameRunning = true;
   initPaddles(); resetBall(1);
-  if (isHost) startRecording(); // begin capturing highlight frames
+  if (isHost) startRecording(); 
   setupTouchControls();
   startGameMusic();
   showTauntBtn();
   showVoiceBtn();
   showScreen('gameScreen');
   document.body.classList.add('game-active');
-  // Voice chat removed
+  
   if (isHost) {
     sendToGuest({ type: 'start', config: { score: { ...score }, hostName: currentPlayer ? currentPlayer.name : 'Host' } });
     startCountdown(3);
@@ -2653,7 +2516,7 @@ function startGame(config) {
 function receiveStartGame(data) {
   if (data.config && data.config.hostName) opponentName = data.config.hostName;
   startGame(data.config);
-  // Re-send our name after game starts to make sure host has it
+  
   setTimeout(() => {
     sendToHost({ type: 'myname', name: currentPlayer ? currentPlayer.name : 'Guest' });
   }, 300);
@@ -2661,8 +2524,8 @@ function receiveStartGame(data) {
 
 function initPaddles() {
   const cw = canvas.width, ch = canvas.height, ph = ch * PADDLE_H_RATIO;
-  // Push paddles inward — large black zone remains for finger drag
-  const inset = Math.max(cw * 0.12, 44); // 12% from edge
+  
+  const inset = Math.max(cw * 0.12, 44); 
   hostPaddle  = { x: inset, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
   guestPaddle = { x: cw - inset - PADDLE_W, y: ch / 2 - ph / 2, w: PADDLE_W, h: ph };
 }
@@ -2691,9 +2554,6 @@ function startCountdown(n) {
   frameId  = requestAnimationFrame(gameLoop);
 }
 
-// ═══════════════════════════════════════════════════════
-//  TOUCH CONTROLS  (drag starts ON paddle only)
-// ═══════════════════════════════════════════════════════
 function setupTouchControls() {
   canvas.removeEventListener('touchstart', onTouchStart);
   canvas.removeEventListener('touchmove',  onTouchMove);
@@ -2709,12 +2569,10 @@ function setupTouchControls() {
   canvas.addEventListener('mouseup',   onMouseUp);
 }
 
-// Returns true if the point (px, py) is within the player's own paddle
-// with a generous hit margin so it's easy to grab on mobile
 function isTouchOnMyPaddle(px, py) {
   const myPaddle = isHost ? hostPaddle : guestPaddle;
   if (!myPaddle || myPaddle.w === undefined) return false;
-  const margin = Math.max(myPaddle.w * 2.5, 30); // generous grab zone
+  const margin = Math.max(myPaddle.w * 2.5, 30); 
   return (
     px >= myPaddle.x - margin &&
     px <= myPaddle.x + myPaddle.w + margin &&
@@ -2727,33 +2585,33 @@ function onTouchStart(e) {
   e.preventDefault();
   const touch = e.touches[0];
   const px = touch.clientX, py = touch.clientY;
-  // Start dragging on ANY touch in the paddle zone (own side of screen)
+  
   const myZoneMaxX = isHost ? canvas.width * 0.5 : canvas.width;
   const myZoneMinX = isHost ? 0 : canvas.width * 0.5;
   isDragging = (px >= myZoneMinX && px <= myZoneMaxX);
   if (isDragging) {
-    // Instantly snap paddle to finger Y for immediate response
+    
     myTouchY = py / canvas.height;
     if (!isHost) sendPaddleToHost();
   }
-  // Fire shot — any tap on own half when power-up B active
+  
   const who = isHost ? 'host' : 'guest';
   const myHalfMinX = isHost ? 0 : canvas.width * 0.5;
   const myHalfMaxX = isHost ? canvas.width * 0.5 : canvas.width;
   if (px >= myHalfMinX && px <= myHalfMaxX &&
       powerUp[who].type === 'B' && performance.now() < powerUp[who].endsAt) {
-    // Fire locally for instant visual feedback on BOTH host and guest
+    
     fireShot(who);
-    // Also notify the other side to add the shot to their simulation
+    
     if (isHost) sendToGuest({ type: 'shot', who, sx: (guestPaddle.x)/canvas.width, sy: (guestPaddle.y+guestPaddle.h/2)/canvas.height });
-    else sendToHost({ type: 'fireshot' }); // host re-fires for authoritative physics
+    else sendToHost({ type: 'fireshot' }); 
   }
 }
 
 function onTouchMove(e) {
   e.preventDefault();
   if (!isDragging) return;
-  // Use clientY directly — no smoothing lag, instant 1:1 response
+  
   myTouchY = e.touches[0].clientY / canvas.height;
   if (!isHost) sendPaddleToHost();
 }
@@ -2763,7 +2621,6 @@ function onTouchEnd(e) {
   isDragging = false;
 }
 
-// Mouse equivalents — only drag when mousedown started on the paddle
 function onMouseDown(e) {
   if (isTouchOnMyPaddle(e.clientX, e.clientY)) isDragging = true;
 }
@@ -2779,7 +2636,7 @@ function onMouseUp(e) {
 let lastSentPaddleY = -1;
 function sendPaddleToHost() {
   if (!isHost && conn && conn.open && myTouchY !== null) {
-    // Only send if moved more than 0.3% of screen — avoids flooding
+    
     if (Math.abs(myTouchY - lastSentPaddleY) > 0.003) {
       lastSentPaddleY = myTouchY;
       sendToHost({ type: 'paddle', y: myTouchY });
@@ -2790,33 +2647,34 @@ function sendPaddleToHost() {
 function sendToHost(data)  { if (!aiMode && conn && conn.open) try { conn.send(data); } catch(e){} }
 function sendToGuest(data) { if (!aiMode && conn && conn.open) try { conn.send(data); } catch(e){} }
 
-// ═══════════════════════════════════════════════════════
-//  GAME LOOP
-// ═══════════════════════════════════════════════════════
+let _dtAcc = 0;
+const _STEP = 1, _MAX_STEPS = 4;
+
 function gameLoop(timestamp) {
   if (!gameRunning) return;
   const rawDt = (timestamp - lastTime) / (1000 / FPS_TARGET);
   lastTime = timestamp;
-  // Cap dt tightly: skip physics on very long frames (tab was hidden etc.)
-  // to avoid the ball teleporting across the screen on resume
-  const dt = rawDt > 4 ? 1 : Math.min(rawDt, 2);
-  if (isHost && countdownVal <= 0 && !tauntActive) {
-    updateGame(dt);
-  } else if (!isHost && countdownVal <= 0 && !tauntActive) {
-    // Guest: dead-reckon ball between network frames to reduce visual stutter
-    ball.x += ball.vx * dt;
-    ball.y += ball.vy * dt;
-    // Wall bounce prediction
-    if (ball.r > 0) {
-      if (ball.y - ball.r < 0)              { ball.y = ball.r;                ball.vy =  Math.abs(ball.vy); }
-      if (ball.y + ball.r > canvas.height)  { ball.y = canvas.height - ball.r; ball.vy = -Math.abs(ball.vy); }
+  const clampedDt = rawDt > 6 ? 1 : Math.min(rawDt, 3);
+  _dtAcc += clampedDt;
+
+  let steps = 0;
+  while (_dtAcc >= _STEP && steps < _MAX_STEPS) {
+    if (isHost && countdownVal <= 0 && !tauntActive) {
+      updateGame(_STEP);
+    } else if (!isHost && countdownVal <= 0 && !tauntActive) {
+      ball.x += ball.vx * _STEP;
+      ball.y += ball.vy * _STEP;
+      if (ball.r > 0) {
+        if (ball.y - ball.r < 0)             { ball.y = ball.r;                 ball.vy =  Math.abs(ball.vy); }
+        if (ball.y + ball.r > canvas.height) { ball.y = canvas.height - ball.r; ball.vy = -Math.abs(ball.vy); }
+      }
+      if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - (1000 / FPS_TARGET));
     }
-    // Decrement shake timer on guest too — otherwise screen shakes forever
-    if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - (1000 / FPS_TARGET));
-    // titillateT advanced in render for guest
+    _dtAcc -= _STEP;
+    steps++;
   }
+
   render(timestamp);
-  // Throttle network: send every NET_SEND_EVERY frames
   netFrameCount++;
   if (isHost && countdownVal <= 0 && !tauntActive && netFrameCount >= NET_SEND_EVERY) {
     netFrameCount = 0;
@@ -2828,7 +2686,7 @@ function gameLoop(timestamp) {
 function updateGame(dt) {
   const cw = canvas.width, ch = canvas.height;
 
-  // Keyboard input — processed each frame, dt-scaled for consistent speed
+  
   if (keys['ArrowUp']   || keys['w']) {
     myTouchY = Math.max(0, (myTouchY ?? 0.5) - 0.018 * dt);
     if (!isHost) sendPaddleToHost();
@@ -2838,38 +2696,38 @@ function updateGame(dt) {
     if (!isHost) sendPaddleToHost();
   }
 
-  // Host paddle — direct 1:1 with finger, no lag
+  
   if (myTouchY !== null) {
     const ty = myTouchY * ch - hostPaddle.h / 2;
     hostPaddle.y = Math.max(0, Math.min(ch - hostPaddle.h, ty));
   }
 
-  // Guest paddle (or AI paddle in AI mode)
+  
   if (aiMode) {
-    updateAIPaddle(dt); // AI agent controls this
+    updateAIPaddle(dt); 
   } else {
-    // Guest paddle — direct 1:1, no lerp
+    
     const gty = guestPaddleY * ch - guestPaddle.h / 2;
     guestPaddle.y = Math.max(0, Math.min(ch - guestPaddle.h, gty));
   }
 
-  // Ball
+  
   ball.x += ball.vx * dt;
   ball.y += ball.vy * dt;
 
-  // Wall bounce — slow down slightly and redirect more horizontal
+  
   if (ball.y - ball.r <= 0 || ball.y + ball.r >= ch) {
     if (ball.y - ball.r <= 0) { ball.y = ball.r;      ball.vy =  Math.abs(ball.vy); }
     else                       { ball.y = ch - ball.r; ball.vy = -Math.abs(ball.vy); }
-    // Reduce vertical component, redirect energy toward horizontal
-    ball.vy *= 0.5;   // flatten angle on wall bounce, keep speed
+    
+    ball.vy *= 0.5;   
     sfx('wall'); haptic(8);
     const vxSign = ball.vx >= 0 ? 1 : -1;
     const vxMag  = Math.sqrt(Math.max(ball.speed * ball.speed - ball.vy * ball.vy, 0.0001));
     ball.vx = vxSign * vxMag;
   }
 
-  // Paddle collisions
+  
   let hitter = null;
   if (checkPaddleCollision(ball, hostPaddle, 1))  { totalPaddleHits++; hitter = 'host'; }
   if (checkPaddleCollision(ball, guestPaddle, -1)){ totalPaddleHits++; hitter = 'guest'; }
@@ -2879,34 +2737,34 @@ function updateGame(dt) {
       spawnSurpriseBox();
   }
 
-  // Asteroid physics
+  
   updateAsteroids(dt);
 
-  // Surprise boxes
+  
   updateSurpriseBoxes(dt);
 
-  // Shots
+  
   updateShots(dt);
 
-  // Fragments
+  
   updateFragments(dt);
 
-  // Power-up expiry
+  
   updatePowerUps();
 
-  // Particles
+  
   updateParticles(dt);
 
-  // Ball trail (every 2nd frame — saves ~1ms/frame)
+  
   if (netFrameCount % 2 === 0) updateBallTrail();
 
-  // Shake timer
+  
   if (shakeTime > 0) shakeTime -= (1000 / FPS_TARGET);
 
-  // Titillation timer
+  
   titillateT += dt * 0.18;
 
-  // Scoring
+  
   if (ball.x < 0)  awardPoint('guest');
   if (ball.x > cw) awardPoint('host');
 }
@@ -2933,7 +2791,7 @@ function checkPaddleCollision(b, paddle, dir) {
 function awardPoint(scorer) {
   score[scorer]++;
   onPointScored(scorer);
-  // Particles + shake + sfx
+  
   const goalX = scorer === 'host' ? canvas.width : 0;
   const goalY = canvas.height / 2;
   const iMyGoal = scorer === (isHost ? 'host' : 'guest');
@@ -2942,7 +2800,7 @@ function awardPoint(scorer) {
     const scorerName = scorer === 'host' ? (currentPlayer?.name||'Host') : (opponentName||'Guest');
     saveHighlight(scorerName + ' scores! ' + (score.host + (scorer==='host'?1:0)) + '–' + (score.guest + (scorer==='guest'?1:0)));
   }
-  if (iMyGoal) triggerShake(6); // tiny shake only when YOU score
+  if (iMyGoal) triggerShake(6); 
   if (iMyGoal) {
     sfx('goal'); haptic([60, 30, 60]);
     if (aiMode) runCommentatorAgent('goal_human', `Score ${score.host}-${score.guest}`);
@@ -2969,7 +2827,7 @@ function sendStateToGuest() {
   const cw = canvas.width, ch = canvas.height;
   const now = performance.now();
 
-  // Only include pts (large data) when asteroid/box count changes
+  
   const astCountChanged = asteroids.length !== lastAsteroidCount;
   const boxCountChanged = surpriseBoxes.length !== lastBoxCount;
   if (astCountChanged) lastAsteroidCount = asteroids.length;
@@ -2986,29 +2844,28 @@ function sendStateToGuest() {
     gph: +(guestPaddle.h/ch).toFixed(4),
     sh: score.host, sg: score.guest,
     cd: countdownVal,
-    // Asteroids: send pts only on count change to save bandwidth
+    
     ast: asteroids.map(a => ({
       x: a.x/cw, y: a.y/ch, r: a.r/cw, a: a.angle,
       ...(astCountChanged ? { p: a.pts } : {})
     })),
-    // Boxes: compact
+    
     box: surpriseBoxes.map(b => ({
       x: b.x/cw, y: b.y/ch, r: b.r/cw, a: b.angle, t: b.type,
-      ...(boxCountChanged ? {} : {}) // boxes are small, always send
+      ...(boxCountChanged ? {} : {}) 
     })),
-    // Fragments: position + age only (pts sent separately via 'fraginit')
+    
     fr: fragments.map(f => ({
       x: f.x/cw, y: f.y/ch, a: f.angle,
       age: Math.min((now - f.bornAt) / FRAGMENT_LIFE, 1)
     })),
-    // Shots: compact
+    
     sh2: shots.map(s => ({ x: s.x/cw, y: s.y/ch, o: s.owner })),
     puH: powerUp.host.type  ? { t: powerUp.host.type,  r: Math.max(0, powerUp.host.endsAt  - now) } : null,
     puG: powerUp.guest.type ? { t: powerUp.guest.type, r: Math.max(0, powerUp.guest.endsAt - now) } : null
   });
 }
 
-// Send full fragment shape data separately (only once per fragment batch)
 function sendFragmentShapes() {
   const cw = canvas.width;
   sendToGuest({
@@ -3021,13 +2878,13 @@ function receiveState(data) {
   const cw = canvas.width, ch = canvas.height;
   const now = performance.now();
 
-  // Ball — with velocity for dead-reckoning
+  
   if (data.bx !== undefined) {
     ball.x = data.bx * cw; ball.y = data.by * ch; ball.r = data.br * cw;
     ball.vx = data.bvx * cw; ball.vy = data.bvy * ch;
   }
 
-  // Paddles
+  
   if (data.hph) hostPaddle.h  = data.hph * ch;
   if (data.gph) guestPaddle.h = data.gph * ch;
   if (data.hpy !== undefined) hostPaddle.y  = data.hpy * ch - hostPaddle.h  / 2;
@@ -3036,7 +2893,7 @@ function receiveState(data) {
   if (data.sh !== undefined) { score.host = data.sh; score.guest = data.sg; }
   if (data.cd > 0) countdownVal = data.cd;
 
-  // Asteroids — update in-place, only update pts if included
+  
   if (data.ast) {
     while (asteroids.length < data.ast.length)
       asteroids.push({ x:0,y:0,r:0,angle:0,pts:[],vx:0,vy:0,spin:0 });
@@ -3047,7 +2904,7 @@ function receiveState(data) {
       if (a.p) asteroids[i].pts = a.p;
     });
   }
-  // Surprise boxes
+  
   if (data.box) {
     while (surpriseBoxes.length < data.box.length)
       surpriseBoxes.push({ x:0,y:0,r:0,angle:0,type:'A',vx:0,vy:0,spin:0 });
@@ -3057,7 +2914,7 @@ function receiveState(data) {
       surpriseBoxes[i].r = b.r*cw; surpriseBoxes[i].angle = b.a; surpriseBoxes[i].type = b.t;
     });
   }
-  // Fragments — update positions in-place
+  
   if (data.fr) {
     while (fragments.length < data.fr.length)
       fragments.push({ x:0,y:0,r:(fragments[0]||{r:8}).r,angle:0,pts:[],bornAt:now,vx:0,vy:0,spin:0 });
@@ -3067,7 +2924,7 @@ function receiveState(data) {
       fragments[i].bornAt = now - f.age * FRAGMENT_LIFE;
     });
   }
-  // Shots
+  
   if (data.sh2) {
     while (shots.length < data.sh2.length)
       shots.push({ x:0,y:0,r:cw*0.012,owner:'host',alive:true,vx:0,vy:0 });
@@ -3076,7 +2933,7 @@ function receiveState(data) {
       shots[i].x = s.x*cw; shots[i].y = s.y*ch; shots[i].owner = s.o;
     });
   }
-  // Power-ups — only update when data is present; expiry handled locally by updatePowerUps()
+  
   if (data.puH !== undefined) {
     if (data.puH) { powerUp.host.type  = data.puH.t; powerUp.host.endsAt  = now + data.puH.r; }
     else          { powerUp.host.type  = null; }
@@ -3087,12 +2944,9 @@ function receiveState(data) {
   }
 }
 
-// ═══════════════════════════════════════════════════════
-//  GAME OVER
-// ═══════════════════════════════════════════════════════
 function endGame(winner) {
   hideTauntBtn();
-  canvas.style.transform = ''; // clear any residual shake
+  canvas.style.transform = ''; 
   gameRunning = false; cancelAnimationFrame(frameId);
   if (aiMode) {
     stopAgents();
@@ -3147,8 +3001,8 @@ function goHome() {
   conn = null; gameRunning = false; cancelAnimationFrame(frameId);
   stopAllAudio(); startLobbyMusic();
   if (isHost && peer && myCode) {
-    // Keep room open — show resume banner with countdown
-    // Re-listen for new connections in case opponent also went home
+    
+    
     peer.off('connection');
     peer.on('connection', (c) => { conn = c; setupConn(); });
     showResumeBanner();
@@ -3162,20 +3016,15 @@ function goHome() {
   showScreen(currentPlayer ? 'lobbyScreen' : 'playerScreen');
 }
 
-// ═══════════════════════════════════════════════════════
-//  RENDER
-// ═══════════════════════════════════════════════════════
 let stars = null;
 let twinkleT = 0;
 
-// ── Gradient / static-asset caches (invalidated on resize) ──
 let _bgGrad      = null;
 let _bgGradSize  = { w: 0, h: 0 };
-let _zoneGrads   = null;          // { zL, zR, zoneW, cw, ch }
-let _nebulaCache = null;          // { canvas, t } — off-screen nebula layer
+let _zoneGrads   = null;          
+let _nebulaCache = null;          
 let _nebulaLastT = -999;
 
-// ── Power-up colour map — constant, declared once ──
 const PU_COLOR_MAP = {
   A: ['#00e5ff','#00b0ff'],
   B: ['#ffea00','#ff6d00'],
@@ -3183,25 +3032,23 @@ const PU_COLOR_MAP = {
   D: ['#ff2244','#ff6584']
 };
 
-// ── Star off-screen canvas ──
 let starCanvas = null, starCtx = null, lastStarRedrawT = -999;
 
-// ── Scanline pattern (replay) ──
 let scanlinePattern = null;
 
 function render(timestamp) {
   const cw = canvas.width, ch = canvas.height;
-  const now = timestamp || performance.now(); // reuse single timestamp throughout
+  const now = timestamp || performance.now(); 
   ctx.clearRect(0, 0, cw, ch);
-  titillateT += 0.18; // always advance regardless of host/guest
+  titillateT += 0.18; 
 
-  // Screen shake via CSS transform (safe — never shifts drawing origin)
+  
   const sh = getShakeOffset();
   canvas.style.transform = (sh.x !== 0 || sh.y !== 0)
     ? `translate(${sh.x}px, ${sh.y}px)`
     : '';
 
-  // Background — cached radial gradient, rebuilt only on resize
+  
   if (_bgGradSize.w !== cw || _bgGradSize.h !== ch) {
     _bgGrad = ctx.createRadialGradient(cw/2, ch/2, 0, cw/2, ch/2, Math.max(cw, ch) * 0.8);
     _bgGrad.addColorStop(0, '#0a0820');
@@ -3211,13 +3058,13 @@ function render(timestamp) {
   ctx.fillStyle = _bgGrad;
   ctx.fillRect(0, 0, cw, ch);
 
-  // Stars
+  
   drawStars(cw, ch);
 
-  // Nebula glow in background
+  
   drawNebula(cw, ch);
 
-  // Paddle drag zones — cached gradients, rebuilt only on resize/zone-width change
+  
   const zoneW = Math.max(cw * 0.20, 72);
   if (!_zoneGrads || _zoneGrads.zoneW !== zoneW || _zoneGrads.cw !== cw || _zoneGrads.ch !== ch) {
     const zL = ctx.createLinearGradient(0, 0, zoneW, 0);
@@ -3232,36 +3079,36 @@ function render(timestamp) {
   ctx.fillRect(0, 0, zoneW, ch);
   ctx.fillStyle = _zoneGrads.zR;
   ctx.fillRect(cw - zoneW, 0, zoneW, ch);
-  // Finger guide dots
+  
   ctx.fillStyle = 'rgba(255,255,255,0.06)';
   for (let y = ch*0.25; y < ch*0.85; y += ch*0.12) {
     ctx.beginPath(); ctx.arc(zoneW*0.35, y, 3, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(cw - zoneW*0.35, y, 3, 0, Math.PI*2); ctx.fill();
   }
 
-  // Center dashed line
+  
   ctx.setLineDash([12, 14]);
   ctx.strokeStyle = 'rgba(255,255,255,0.07)';
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(cw/2, 0); ctx.lineTo(cw/2, ch); ctx.stroke();
   ctx.setLineDash([]);
 
-  // Asteroids
+  
   asteroids.forEach(drawAsteroid);
 
-  // AI mode: show thinking indicator when agent is working
+  
   if (aiMode && agentsBusy.paddle) {
     ctx.save();
     const px = guestPaddle.x + guestPaddle.w / 2;
     const py = guestPaddle.y - 20;
-    ctx.fillStyle = '#ffea00'; ctx.shadowColor = '#ffea00'; ctx.shadowBlur = 10;
+    ctx.fillStyle = '#ffea00'; ctx.shadowColor = '#ffea00'; ctx.shadowBlur = 6;
     ctx.font = `${Math.min(cw*0.025,12)}px monospace`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('🤖…', px, py);
     ctx.restore();
   }
 
-  // Paddles — no shake/titillation, draw at actual position
+  
   const hp = hostPaddle;
   const gp = guestPaddle;
   const hColor = PU_COLOR_MAP[powerUp.host.type]  || ['#6c63ff','#9c5fff'];
@@ -3269,7 +3116,7 @@ function render(timestamp) {
   drawPaddle(hp, hColor[0], hColor[1]);
   drawPaddle(gp, gColor[0], gColor[1]);
 
-  // Power-up remaining bar
+  
   for (const [who, paddle, color] of [['host',hp,hColor[0]],['guest',gp,gColor[0]]]) {
     const pu = powerUp[who];
     if (!pu.type) continue;
@@ -3280,7 +3127,7 @@ function render(timestamp) {
     const bx = who === 'host' ? paddle.x - 9 : paddle.x + paddle.w + 4;
     ctx.fillRect(bx, paddle.y + paddle.h - bh, bw, bh);
     ctx.globalAlpha = 1;
-    // Shot timer bar label
+    
     if (pu.type === 'B') {
       const remSec = Math.ceil(Math.max(0, pu.endsAt - now) / 1000);
       ctx.font = `bold ${Math.min(cw*0.03,13)}px monospace`;
@@ -3294,25 +3141,25 @@ function render(timestamp) {
   }
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-  // Surprise boxes
+  
   surpriseBoxes.forEach(drawSurpriseBox);
 
-  // Shots
+  
   shots.forEach(drawShot);
 
-  // Fragments
+  
   fragments.forEach(f => drawFragment(f, 1 - (now - f.bornAt) / FRAGMENT_LIFE));
 
-  // Ball trail
+  
   if (countdownVal <= 0) drawBallTrail();
 
-  // Ball
+  
   if (countdownVal <= 0 && ball.x !== undefined) drawBall();
 
-  // Goal particles
+  
   drawParticles();
 
-  // Score
+  
   const scoreY = ch * 0.1;
   const scoreSize = Math.min(cw * 0.08, 52);
   ctx.font = `bold ${scoreSize}px monospace`;
@@ -3325,63 +3172,31 @@ function render(timestamp) {
   ctx.fillStyle = !isHost ? 'rgba(255,101,132,0.95)' : 'rgba(255,255,255,0.55)';
   ctx.shadowColor = '#ff6584'; ctx.shadowBlur = !isHost ? 18 : 0;
   ctx.fillText(score.guest, cw * 0.72, scoreY);
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur = 4;
 
-  // Player name labels — big, glowing, pill background
+
   const myName  = currentPlayer ? currentPlayer.name : (isHost ? 'Host' : 'Guest');
   const oppName = opponentName || '???';
   const hostName  = isHost  ? myName  : oppName;
   const guestName = !isHost ? myName  : oppName;
-  const nameFontSize = Math.min(cw * 0.048, 22);
-  ctx.font = `800 ${nameFontSize}px 'Segoe UI', system-ui, sans-serif`;
+
+  ctx.save();
+  ctx.font = `600 ${Math.min(cw*0.028,13)}px 'Segoe UI',sans-serif`;
   ctx.textBaseline = 'middle';
-
-  function drawNamePill(name, cx, cy, isMe, baseColor, glowColor) {
-    // Auto-scale font so long names always fit in max 44% of screen width
-    const maxPillW = cw * 0.44;
-    let fs = nameFontSize;
-    ctx.font = `800 ${fs}px 'Segoe UI', system-ui, sans-serif`;
-    let tw = ctx.measureText(name).width;
-    const padX = fs * 1.4;
-    if (tw + padX > maxPillW) {
-      fs = fs * (maxPillW - padX) / tw;
-      fs = Math.max(fs, 11);
-      ctx.font = `800 ${fs}px 'Segoe UI', system-ui, sans-serif`;
-      tw = ctx.measureText(name).width;
-    }
-    const ph = fs * 1.6, pw = Math.min(tw + padX, maxPillW);
-    const px = cx - pw / 2, py = cy - ph / 2;
-
-    ctx.save();
-    // Pill background
-    ctx.globalAlpha = isMe ? 0.3 : 0.13;
-    ctx.fillStyle = baseColor;
-    ctx.beginPath();
-    ctx.roundRect(px, py, pw, ph, ph / 2);
-    ctx.fill();
-    // Border
-    ctx.globalAlpha = isMe ? 0.75 : 0.28;
-    ctx.strokeStyle = isMe ? baseColor : 'rgba(255,255,255,0.18)';
-    ctx.lineWidth = isMe ? 1.5 : 1;
-    ctx.stroke();
+  function drawSmallName(name, x, y, col) {
+    const tw = ctx.measureText(name).width;
+    const fh = Math.min(cw*0.028,13), ph = fh*1.7, pw = tw+14;
+    ctx.globalAlpha = 0.18; ctx.fillStyle = col;
+    ctx.beginPath(); ctx.roundRect(x-pw/2, y-ph/2, pw, ph, ph/2); ctx.fill();
+    ctx.globalAlpha = 0.72; ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.fillText(name, x, y);
     ctx.globalAlpha = 1;
-    // Text
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur = isMe ? 14 : 4;
-    ctx.fillStyle = isMe ? '#ffffff' : 'rgba(255,255,255,0.6)';
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'center';
-    ctx.fillText(name, cx, cy);
-    ctx.shadowBlur = 0;
-    ctx.restore();
   }
+  drawSmallName(hostName,  hostPaddle.x  + hostPaddle.w/2,  ch*0.93, '#6c63ff');
+  drawSmallName(guestName, guestPaddle.x + guestPaddle.w/2, ch*0.93, '#ff6584');
+  ctx.restore();
 
-  // Place names centered over each score, allow full half-width
-  const nameY = scoreY + scoreSize * 0.9;
-  drawNamePill(hostName,  cw * 0.25, nameY, isHost,  '#6c63ff', '#9c8fff');
-  drawNamePill(guestName, cw * 0.75, nameY, !isHost, '#ff6584', '#ff99aa');
 
-  // HUD: asteroid + box count
   if ((asteroids.length > 0 || surpriseBoxes.length > 0) && countdownVal <= 0) {
     ctx.font = `${Math.min(cw * 0.022, 11)}px sans-serif`;
     ctx.textAlign = 'center';
@@ -3394,32 +3209,32 @@ function render(timestamp) {
     }
   }
 
-  // Countdown
+  
   if (countdownVal > 0) {
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
     ctx.font = `bold ${Math.min(cw * 0.22, 140)}px monospace`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.shadowColor = '#6c63ff'; ctx.shadowBlur = 40;
+    ctx.shadowColor = '#6c63ff'; ctx.shadowBlur = 24;
     ctx.fillText(countdownVal, cw / 2, ch / 2);
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur = 4;
     ctx.font = `${Math.min(cw * 0.032, 15)}px sans-serif`;
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     const side = isHost ? cw * 0.15 : cw * 0.85;
     ctx.fillText('← drag the paddle', side, ch * 0.88);
   }
 
-  // Taunt overlay (always on top)
+  
   drawTaunt(cw, ch);
 }
 
 function drawStars(cw, ch) {
   twinkleT += 0.008;
-  // Rebuild off-screen canvas if canvas was resized
+  
   if (!starCanvas || starCanvas.width !== cw || starCanvas.height !== ch) {
     starCanvas = document.createElement('canvas');
     starCanvas.width = cw; starCanvas.height = ch;
     starCtx = starCanvas.getContext('2d');
-    lastStarRedrawT = -999; // force redraw
+    lastStarRedrawT = -999; 
   }
   if (!stars) {
     stars = Array.from({ length: 90 }, () => ({
@@ -3430,7 +3245,7 @@ function drawStars(cw, ch) {
       twinklePhase: Math.random() * Math.PI * 2
     }));
   }
-  // Redraw star layer at most every 3 rAF ticks (~20fps) — twinkle is imperceptibly slow
+  
   if (twinkleT - lastStarRedrawT > 0.024) {
     lastStarRedrawT = twinkleT;
     starCtx.clearRect(0, 0, cw, ch);
@@ -3442,28 +3257,28 @@ function drawStars(cw, ch) {
       starCtx.fill();
     });
   }
-  ctx.drawImage(starCanvas, 0, 0); // 1 composite draw call instead of 90
+  ctx.drawImage(starCanvas, 0, 0); 
 }
 
 function drawNebula(cw, ch) {
   const t = Date.now() * 0.00015;
-  // Only redraw the nebula layer every 6 frames — it changes imperceptibly slowly
+  
   if (!_nebulaCache || _nebulaCache.cw !== cw || _nebulaCache.ch !== ch) {
     const nc = document.createElement('canvas');
     nc.width = cw; nc.height = ch;
     _nebulaCache = { canvas: nc, ctx: nc.getContext('2d'), cw, ch };
     _nebulaLastT = -999;
   }
-  if (t - _nebulaLastT > 0.04) { // ~60ms cadence (every ~4 frames at 60fps)
+  if (t - _nebulaLastT > 0.04) { 
     _nebulaLastT = t;
     const nc = _nebulaCache.ctx;
     nc.clearRect(0, 0, cw, ch);
-    // Left nebula
+    
     const g1 = nc.createRadialGradient(cw * 0.15, ch * 0.5, 0, cw * 0.15, ch * 0.5, cw * 0.35);
     g1.addColorStop(0, `rgba(60,40,140,${0.08 + Math.sin(t) * 0.02})`);
     g1.addColorStop(1, 'rgba(0,0,0,0)');
     nc.fillStyle = g1; nc.fillRect(0, 0, cw, ch);
-    // Right nebula
+    
     const g2 = nc.createRadialGradient(cw * 0.85, ch * 0.5, 0, cw * 0.85, ch * 0.5, cw * 0.35);
     g2.addColorStop(0, `rgba(120,30,80,${0.06 + Math.sin(t + 1) * 0.02})`);
     g2.addColorStop(1, 'rgba(0,0,0,0)');
@@ -3481,13 +3296,13 @@ function drawSurpriseBox(box) {
   const fillMap = { A:'#003355', B:'#332200', C:'#001133', D:'#330011' };
   const glow = glowMap[box.type] || '#ffffff';
   const fill = fillMap[box.type] || '#111111';
-  ctx.shadowColor = glow; ctx.shadowBlur = 22;
+  ctx.shadowColor = glow; ctx.shadowBlur = 13;
   ctx.strokeStyle = glow; ctx.lineWidth = 2.5;
   ctx.fillStyle = fill;
   ctx.beginPath();
   ctx.roundRect(-s/2, -s/2, s, s, s*0.18);
   ctx.fill(); ctx.stroke();
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur = 4;
   ctx.font = `bold ${s*0.7}px sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const icons = { A:'🔵', B:'🔫', C:'❄️', D:'☠️' };
@@ -3498,12 +3313,12 @@ function drawSurpriseBox(box) {
 function drawShot(s) {
   ctx.save();
   const color = s.owner === 'host' ? '#ffea00' : '#ff6d00';
-  ctx.shadowColor = color; ctx.shadowBlur = 18;
+  ctx.shadowColor = color; ctx.shadowBlur = 11;
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.ellipse(s.x, s.y, s.r * 2.2, s.r * 0.7, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur = 4;
   ctx.restore();
 }
 
@@ -3520,19 +3335,18 @@ function drawFragment(f, alpha) {
     i === 0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
   }
   ctx.closePath();
-  // Bright orange-rock color with glow for visibility
+  
   ctx.shadowColor = '#ff8c00';
-  ctx.shadowBlur = 12 * alpha;
+  ctx.shadowBlur = 7 * alpha;
   ctx.fillStyle = '#c87020';
   ctx.fill();
   ctx.strokeStyle = `rgba(255,180,60,${alpha * 0.9})`; ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur = 4;
   ctx.globalAlpha = 1;
   ctx.restore();
 }
 
-// Paddle gradient cache: key → { grad, y, h }
 const _paddleGradCache = new Map();
 function drawPaddle(p, c1, c2) {
   const key = c1 + c2;
@@ -3543,27 +3357,29 @@ function drawPaddle(p, c1, c2) {
     entry = { grad, y: p.y, h: p.h };
     _paddleGradCache.set(key, entry);
   }
-  ctx.shadowColor = c1; ctx.shadowBlur = 22;
+  ctx.shadowColor = c1; ctx.shadowBlur = 13;
   ctx.fillStyle = entry.grad;
   const r = p.w / 2;
   ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, r); ctx.fill();
-  ctx.shadowBlur = 0;
+  ctx.shadowBlur = 4;
 }
 
 function drawBall() {
-  const t = Date.now() * 0.004;
-  // Trail glow
-  ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 28;
-  const grad = ctx.createRadialGradient(ball.x - ball.r*0.3, ball.y - ball.r*0.3, 0, ball.x, ball.y, ball.r);
-  grad.addColorStop(0, '#ffffff');
-  grad.addColorStop(0.6, 'rgba(180,200,255,0.9)');
-  grad.addColorStop(1, 'rgba(108,99,255,0.4)');
-  ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill();
-  ctx.shadowBlur = 0;
+  ctx.save();
+  ctx.shadowColor = '#a0b8ff'; ctx.shadowBlur = 7;
+  const g = ctx.createRadialGradient(
+    ball.x - ball.r*0.28, ball.y - ball.r*0.28, 0,
+    ball.x, ball.y, ball.r
+  );
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.55, 'rgba(180,200,255,0.9)');
+  g.addColorStop(1, 'rgba(108,99,255,0.35)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 4;
+  ctx.restore();
 }
 
-// roundRect polyfill
 if (!CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
     this.moveTo(x+r,y); this.lineTo(x+w-r,y); this.arcTo(x+w,y,x+w,y+r,r);
@@ -3573,33 +3389,23 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
   };
 }
 
-// ═══════════════════════════════════════════════════════
-//  KEYBOARD (desktop)
-// ═══════════════════════════════════════════════════════
 const keys = {};
 window.addEventListener('keydown', e => { keys[e.key] = true; });
 window.addEventListener('keyup',   e => { keys[e.key] = false; });
-// Key state is read directly inside updateGame() each frame — no separate interval needed
 
-// ═══════════════════════════════════════════════════════
-//  INIT
-// ═══════════════════════════════════════════════════════
 resizeCanvas();
 setConnStatus(false, '–');
-// Start on player screen
+
 showScreen('playerScreen');
 
-// Audio context created on first user interaction (for SFX only)
 function tryResumeAudio() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 document.addEventListener('touchstart', tryResumeAudio, { capture: true, passive: true });
 document.addEventListener('mousedown',  tryResumeAudio, { capture: true, passive: true });
 
-// ── Restore waiting screen when user returns to tab/app ──
-// If they swiped away mid-wait, coming back shows the correct screen
 function restoreScreenOnReturn() {
-  // If we're host, peer is alive and nobody connected yet — go back to waitingScreen
+  
   if (isHost && peer && !conn && myCode && roomSecondsLeft > 0 && !gameRunning) {
     document.getElementById('roomCodeDisplay').textContent = myCode;
     showScreen('waitingScreen');
@@ -3609,10 +3415,10 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') restoreScreenOnReturn();
 });
 window.addEventListener('pageshow', (e) => {
-  // pageshow fires on back-navigation (bfcache restore)
+  
   restoreScreenOnReturn();
 });
-// Also handle Android back button / history pop
+
 window.addEventListener('popstate', () => {
   restoreScreenOnReturn();
 });
