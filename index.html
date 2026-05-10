@@ -440,6 +440,30 @@ function startAgents() {
     `${currentPlayer?.name || 'Humano'} vs AI (${aiDifficulty})`), 1500);
 }
 
+function startAIGame() {
+  // 1. Initialize audio if not already done
+  initAudio(); 
+  
+  // 2. Set AI state
+  aiMode = true;
+  isHost = true; // AI mode always runs on host physics
+  opponentName = "AI Agent";
+  
+  // 3. Start the game engine
+  startGame();
+  
+  // 4. Start the AI Orchestrator agents (Paddle, GM, Commentator)
+  startAgents();
+  
+  // 5. Show toast to confirm
+  showToast("🤖 AI Universe Initialized");
+}
+
+function stopAIGame() {
+  aiMode = false;
+  stopAgents();
+}
+
 function stopAgents() {
   clearInterval(aiLoopTimer);
   clearInterval(masterLoopTimer);
