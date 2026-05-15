@@ -171,28 +171,7 @@
       z-index: 250; display: none; flex-direction: column; align-items: center; gap: 4px;
       pointer-events: none;
     }
-    #commentaryBubble {
-      background: linear-gradient(135deg, rgba(12,8,40,0.95), rgba(30,15,60,0.95));
-      border: 2px solid rgba(150,120,255,0.6);
-      color: #ffffff;
-      font-size: clamp(1rem, 4vw, 1.3rem);
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      padding: 12px 24px;
-      border-radius: 50px;
-      max-width: min(88vw, 400px);
-      text-align: center;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 0 30px rgba(108,99,255,0.5), 0 0 60px rgba(108,99,255,0.2), inset 0 0 20px rgba(108,99,255,0.1);
-      opacity: 0;
-      transform: translateY(10px) scale(0.95);
-      transition: opacity 0.35s ease, transform 0.35s cubic-bezier(.34,1.56,.64,1);
-      text-shadow: 0 0 20px rgba(180,160,255,0.8), 0 2px 4px rgba(0,0,0,0.5);
-    }
-    #commentaryBubble.visible {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
+    /* commentary CSS removed */
     #agentStatusBar {
       display: flex; gap: 8px; align-items: center;
     }
@@ -278,7 +257,6 @@
 
 <!-- AI AGENT HUD — only visible in AI mode via startAgents() -->
 <div id="agentHud" style="display:none">
-  <div id="commentaryBubble"></div>
   <div id="agentStatusBar" style="display:none">
     <span class="agent-dot" id="dotPaddle"></span>
     <span class="agent-label">AI</span>
@@ -433,7 +411,6 @@
 <!-- REPLAY SCREEN -->
 <div id="replaySubtitle" style="font-size:0.85rem;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase"></div>
   </div>
-  <button class="btn btn-secondary" onclick="stopReplay()" style="position:absolute;bottom:28px;left:50%;transform:translateX(-50%);max-width:200px;z-index:10">✕ Close</button>
 </div>
 
 <script>
@@ -1069,23 +1046,9 @@ function setAgentDot(agent, state) {
   if (el) el.className = 'agent-dot ' + state;
 }
 
-function showCommentary(text) {
-  commentaryQueue.push(text);
-  if (!commentaryShowing) drainCommentaryQueue();
-}
+function showCommentary(text) {}
 
-function drainCommentaryQueue() {
-  if (commentaryQueue.length === 0) { commentaryShowing = false; return; }
-  commentaryShowing = true;
-  const el = document.getElementById('commentaryBubble');
-  if (!el) { commentaryShowing = false; return; }
-  el.textContent = commentaryQueue.shift();
-  el.classList.add('visible');
-  setTimeout(() => {
-    el.classList.remove('visible');
-    setTimeout(() => drainCommentaryQueue(), 350);
-  }, 3200);
-}
+function drainCommentaryQueue() {}
 
 function getAIDiffParams() {
   return {
@@ -1198,46 +1161,7 @@ Consider: is one player dominating? Is the game too easy/hard? Is it getting sta
   agentsBusy.master = false;
 }
 
-async function runCommentatorAgent(eventType, context) {
-  const now = performance.now();
-  if (now - lastCommentary < AI_COMM_COOLDOWN) return;
-  if (agentsBusy.comm) return;
-  agentsBusy.comm = true;
-  lastCommentary = now;
-  setAgentDot('Comm', 'thinking');
-
-  const playerCtx = currentPlayer ? currentPlayer.name : 'El jugador';
-  const systemPrompt = `Eres el comentarista oficial de un torneo de ping pong cósmico intergaláctico.
-Tu estilo es apasionado, elegante y espectacular — como un gran narrador deportivo.
-IMPORTANTE: Usa lenguaje totalmente apropiado, sin groserías ni palabras vulgares.
-Genera UNA sola frase corta y emocionante (máx 8 palabras) para el evento.
-Usa frases como: "¡Increíble jugada!", "¡Magistral!", "¡Imparable!", "¡El cosmos lo celebra!",
-"¡Qué precisión!", "¡Sin piedad!", "¡El campeón emerge!", "¡Fabuloso!", "¡Eso es clase!".
-Puedes mencionar al jugador: ${playerCtx}.
-Responde SOLO con la frase, sin comillas, sin puntuación extra.`;
-
-  const userPrompt = `Evento: ${eventType}. Contexto: ${context}`;
-
-  try {
-    const text = await callClaude(systemPrompt, userPrompt, 40);
-    showCommentary(text.trim());
-    setAgentDot('Comm', 'active');
-  } catch(e) {
-    setAgentDot('Comm', 'error');
-    
-    const fallbacks = {
-      'goal_human': ['¡Extraordinario punto!', '¡Magistral jugada!', '¡El humano domina el cosmos!', '¡Eso es precisión pura!'],
-      'goal_ai':    ['¡La inteligencia artificial triunfa!', '¡Cálculo perfecto!', '¡La máquina no perdona!', '¡Impecable!'],
-      'asteroid':   ['¡El asteroide ha sido destruido!', '¡Impacto cósmico!', '¡Fragmentos en el espacio!'],
-      'powerup':    ['¡Poder especial activado!', '¡Magia cósmica!', '¡El universo favorece al valiente!'],
-      'streak':     ['¡Racha imparable!', '¡En llamas estelares!', '¡Dominio absoluto!'],
-      'game_start': ['¡Que comience el duelo cósmico!', '¡Los astros se alinean!', '¡Bienvenidos al torneo intergaláctico!']
-    };
-    const opts = fallbacks[eventType] || fallbacks['asteroid'];
-    showCommentary(opts[Math.floor(Math.random() * opts.length)]);
-  }
-  agentsBusy.comm = false;
-}
+async function runCommentatorAgent(eventType, context) {}
 
 function startAgents() {
   if (!aiMode) return;
