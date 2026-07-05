@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Death Penalties</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<style>
+  :root{
+    --pitch:#0B3D2E; --pitch-dark:#082A20; --chalk:#F5F3EC; --lime:#D8F34D;
+    --red:#E63946; --line: rgba(245,243,236,0.35); --net: rgba(245,243,236,0.12);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0; font-family:'Inter',sans-serif;
+    background:
+      radial-gradient(ellipse at top, rgba(255,255,255,0.06), transparent 60%),
+      repeating-linear-gradient(0deg, var(--pitch) 0 40px, var(--pitch-dark) 40px 80px);
+    color:var(--chalk); min-height:100vh; display:flex; justify-content:center; align-items:flex-start;
+  }
+  #app{ width:100%; max-width:480px; min-height:100vh; background:rgba(4,25,18,0.55);
+        display:flex; flex-direction:column; padding:18px 16px 32px; }
+  h1,h2,h3{font-family:'Bebas Neue',sans-serif; letter-spacing:1px; margin:0;}
+  h1{font-size:34px; color:var(--lime); text-align:center; text-shadow:0 2px 0 rgba(0,0,0,0.4);}
+  .subtitle{text-align:center; opacity:0.75; font-size:12.5px; margin-top:-4px; margin-bottom:16px;}
+  .screen{display:none; flex-direction:column; gap:14px; flex:1;}
+  .screen.active{display:flex; animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+  .card{background:rgba(245,243,236,0.06); border:1px solid var(--line); border-radius:16px; padding:16px;}
+  .field label{font-size:11px; letter-spacing:2px; text-transform:uppercase; opacity:0.7; display:block; margin-bottom:6px;}
+  .field input{width:100%; padding:13px 14px; border-radius:10px; border:1px solid var(--line);
+    background:rgba(0,0,0,0.25); color:var(--chalk); font-size:16px; font-weight:600; text-align:center;
+    letter-spacing:2px; text-transform:uppercase;}
+  .field input::placeholder{color:rgba(245,243,236,0.35); letter-spacing:normal; text-transform:none;}
+  button.big{background:var(--lime); color:var(--pitch-dark); border:none; border-radius:14px; padding:16px;
+    font-family:'Bebas Neue'; font-size:22px; letter-spacing:1px; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,0.3); width:100%;}
+  button.big:active{transform:translateY(2px); box-shadow:0 2px 0 rgba(0,0,0,0.3);}
+  button.big:disabled{opacity:0.35; box-shadow:none;}
+  button.ghost{background:transparent; color:var(--chalk); border:1px solid var(--line); border-radius:12px;
+    padding:12px; font-family:'Bebas Neue'; font-size:16px; letter-spacing:1px; cursor:pointer; width:100%;}
+  .or-sep{text-align:center; font-size:11px; opacity:0.5; letter-spacing:2px; margin:2px 0;}
+
+  .room-code-display{ text-align:center; }
+  .room-code-display .code{ font-family:'Bebas Neue'; font-size:52px; color:var(--lime); letter-spacing:8px; }
+  .room-code-display .lbl{ font-size:11px; opacity:0.7; letter-spacing:2px; text-transform:uppercase; }
+
+  .status-bar{display:flex; justify-content:space-between; align-items:center; font-size:12px; opacity:0.85;}
+  .round-pill{background:rgba(216,243,77,0.15); color:var(--lime); border:1px solid var(--lime);
+    padding:4px 10px; border-radius:999px; font-weight:800; font-size:12px;}
+
+  .lobby-list{display:flex; flex-direction:column; gap:8px;}
+  .lobby-row{display:flex; align-items:center; gap:10px; background:rgba(0,0,0,0.2); border-radius:10px; padding:10px 12px;}
+  .lobby-dot{width:8px; height:8px; border-radius:50%; background:var(--lime); flex-shrink:0;}
+  .lobby-row .me-tag{margin-left:auto; font-size:10px; opacity:0.6; letter-spacing:1px;}
+
+  .turn-banner{text-align:center;}
+  .turn-banner .role{font-size:13px; opacity:0.7; text-transform:uppercase; letter-spacing:2px;}
+  .turn-banner .name{font-family:'Bebas Neue'; font-size:32px; color:var(--lime);}
+  .turn-banner .vs{font-size:12px; opacity:0.6;}
+
+  .goal-wrap{ position:relative;
+    background: linear-gradient(rgba(245,243,236,0.03), rgba(245,243,236,0.03)),
+      repeating-linear-gradient(90deg, var(--net) 0 2px, transparent 2px 18px),
+      repeating-linear-gradient(0deg, var(--net) 0 2px, transparent 2px 18px);
+    border:5px solid var(--chalk); border-bottom:none; border-radius:6px 6px 0 0; aspect-ratio:4/3; padding:8px; }
+  .zone-grid{display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(2,1fr); gap:6px; height:100%;}
+  .zone{border:2px dashed rgba(245,243,236,0.25); border-radius:8px; display:flex; align-items:center; justify-content:center;
+    font-size:20px; background:rgba(0,0,0,0.05); cursor:pointer; transition:.12s; position:relative;}
+  .zone:active{transform:scale(0.94);}
+  .zone.selected{background:rgba(216,243,77,0.35); border-color:var(--lime); box-shadow:0 0 0 2px var(--lime) inset;}
+  .zone .icon{opacity:0.5; font-size:18px;}
+  .ball-sprite{position:absolute; font-size:26px; left:50%; bottom:4px; transform:translateX(-50%);
+    transition:left .55s cubic-bezier(.2,.8,.3,1), bottom .55s cubic-bezier(.2,.8,.3,1), transform .55s; z-index:5;
+    filter:drop-shadow(0 3px 2px rgba(0,0,0,0.5));}
+  .keeper-sprite{position:absolute; font-size:32px; left:50%; top:50%; transform:translate(-50%,-50%);
+    transition:left .5s ease, top .5s ease; z-index:4;}
+
+  .power-row{display:flex; gap:8px;}
+  .power-btn{flex:1; padding:12px 4px; border-radius:12px; border:1px solid var(--line);
+    background:rgba(0,0,0,0.2); color:var(--chalk); font-family:'Bebas Neue'; font-size:15px;
+    display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer;}
+  .power-btn .bars{display:flex; gap:2px;}
+  .power-btn .bar{width:6px; height:10px; background:rgba(245,243,236,0.25); border-radius:2px;}
+  .power-btn.selected{background:rgba(216,243,77,0.25); border-color:var(--lime); color:var(--lime);}
+  .power-btn.selected .bar.on{background:var(--lime);}
+
+  .wait-screen{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    gap:14px; flex:1; padding:20px 0;}
+  .wait-screen .big-emoji{font-size:56px; animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%,100%{transform:scale(1); opacity:.85;} 50%{transform:scale(1.08); opacity:1;}}
+
+  .result-banner{text-align:center; padding:10px 0;}
+  .result-banner .word{font-family:'Bebas Neue'; font-size:42px;}
+  .word.gol{color:var(--lime);} .word.atajada{color:var(--red);} .word.afuera{color:#ccc;}
+
+  .scoreboard{display:flex; flex-direction:column; gap:6px;}
+  .score-row{display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.2);
+    border-radius:10px; padding:8px 12px; font-weight:600;}
+  .score-row .goals{font-family:'Bebas Neue'; font-size:20px; color:var(--lime);}
+  .score-row.leader{border:1px solid var(--lime);}
+  .score-row.me{outline:1px dashed rgba(245,243,236,0.4);}
+
+  .final-title{text-align:center; font-family:'Bebas Neue'; font-size:28px; color:var(--lime);}
+  .winner-box{text-align:center; background:rgba(216,243,77,0.12); border:1px solid var(--lime); border-radius:16px; padding:20px;}
+  .winner-box .trophy{font-size:44px;}
+  .winner-box .wname{font-family:'Bebas Neue'; font-size:32px; color:var(--lime);}
+
+  .footer-note{text-align:center; font-size:11px; opacity:0.5; margin-top:auto; padding-top:10px;}
+  .error-text{color:var(--red); font-size:12.5px; text-align:center; min-height:16px;}
+  a.back-link{color:var(--dim); font-size:11px; opacity:0.6; text-align:center; text-decoration:none; display:block;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ENTRY: create or join -->
+  <div id="screen-entry" class="screen active">
+    <h1>🥅 DEATH<br>PENALTIES</h1>
+    <div class="subtitle">Penales online — de 2 a 6 jugadores</div>
+
+    <div class="card field">
+      <label>Tu nombre</label>
+      <input id="nameInput" placeholder="Ej: Ariel" maxlength="16" style="text-transform:none; letter-spacing:normal;">
+    </div>
+
+    <button class="big" id="btnCreate">CREAR SALA</button>
+    <div class="or-sep">— o —</div>
+    <div class="card field">
+      <label>Código de sala</label>
+      <input id="codeInput" placeholder="ABCD" maxlength="4">
+    </div>
+    <button class="big" id="btnJoin">UNIRME</button>
+    <div class="error-text" id="entryError"></div>
+    <a class="back-link" href="../index.html">← Volver al arcade</a>
+  </div>
+
+  <!-- LOBBY -->
+  <div id="screen-lobby" class="screen">
+    <div class="room-code-display">
+      <div class="lbl">Código de sala — compartilo</div>
+      <div class="code" id="lobbyCode">----</div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:10px; font-size:14px; opacity:0.8;">JUGADORES (<span id="lobbyCount">0</span>/6)</h3>
+      <div class="lobby-list" id="lobbyList"></div>
+    </div>
+    <button class="big" id="btnStartGame" style="display:none;">EMPEZAR PARTIDO</button>
+    <div class="wait-screen" id="lobbyWaiting" style="display:none; padding:6px 0;">
+      <div style="font-size:13px; opacity:0.75;">Esperando a que el host arranque el partido…</div>
+    </div>
+    <div class="footer-note">Se necesitan al menos 2 jugadores. Cada uno patea 5 penales y todos atajan por turno.</div>
+  </div>
+
+  <!-- GAME -->
+  <div id="screen-game" class="screen">
+    <div class="status-bar">
+      <span id="roundLabel" class="round-pill">RONDA 1/5</span>
+      <span id="matchLabel" style="opacity:0.7;"></span>
+    </div>
+
+    <div id="gameBody"></div>
+
+    <div class="card" id="miniScoreboard" style="margin-top:4px;"></div>
+  </div>
+
+  <!-- FINAL -->
+  <div id="screen-final" class="screen">
+    <div class="final-title">RESULTADOS</div>
+    <div class="scoreboard" id="finalScoreboard" style="margin:14px 0;"></div>
+    <div class="winner-box" id="winnerBox">
+      <div class="trophy">🏆</div>
+      <div class="wname" id="winnerName"></div>
+      <div style="font-size:13px; opacity:0.8;">¡Campeón del picado!</div>
+    </div>
+    <button class="big" id="btnRematch" style="display:none; margin-top:14px;">REVANCHA</button>
+    <div class="wait-screen" id="finalWaiting" style="display:none;">
+      <div style="font-size:13px; opacity:0.75;">Esperando al host para la revancha…</div>
+    </div>
+    <a class="back-link" href="../index.html" style="margin-top:10px;">← Volver al arcade</a>
+  </div>
+
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDtvsFr21pxMtExnPpm6aENrlfTToOwkwI",
+  authDomain: "familyconnect-b1c23.firebaseapp.com",
+  databaseURL: "https://familyconnect-b1c23-default-rtdb.firebaseio.com",
+  projectId: "familyconnect-b1c23",
+  storageBucket: "familyconnect-b1c23.firebasestorage.app",
+  messagingSenderId: "276648858270",
+  appId: "1:276648858270:web:0fa32e169652fa8499e18f"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const ZONE_POS = [
+  {left:16, top:22}, {left:50, top:22}, {left:84, top:22},
+  {left:16, top:74}, {left:50, top:74}, {left:84, top:74}
+];
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+const el = id => document.getElementById(id);
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  el(id).classList.add('active');
+}
+
+let roomCode = null;
+let pid = null;
+let room = null;
+let lastAutoAdvanceFor = null; // dedup key: `${phase}-${matchIndex}`
+let localPick = null; // {kickZone, power} staged before kickerDone true, and {zone} for gk
+
+// ---------- helpers ----------
+function randCode(){
+  let s = '';
+  for(let i=0;i<4;i++) s += CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)];
+  return s;
+}
+function randId(){
+  return 'p_' + Math.random().toString(36).slice(2,10);
+}
+function buildMainMatches(order){
+  const matches = [];
+  const n = order.length;
+  for(let r=0;r<5;r++){
+    for(let i=0;i<n;i++){
+      matches.push({kicker: order[i], gk: order[(i+1)%n]});
+    }
+  }
+  return matches;
+}
+function buildSuddenMatches(tied){
+  const n = tied.length;
+  return tied.map((id,i)=>({kicker:id, gk:tied[(i+1)%n]}));
+}
+function resolveOutcome(same, power){
+  if(same){
+    const saveChance = power==='suave' ? 0.88 : power==='medio' ? 0.65 : 0.4;
+    return Math.random() < saveChance ? 'atajada' : 'gol';
+  } else {
+    if(power==='fuerte' && Math.random() < 0.12) return 'afuera';
+    return 'gol';
+  }
+}
+function nameOf(id){
+  return (room && room.players && room.players[id] && room.players[id].name) || '???';
+}
+
+// ---------- ENTRY ----------
+const savedName = sessionStorage.getItem('arcadeNajlis_playerName');
+if(savedName) el('nameInput').value = savedName;
+
+el('btnCreate').onclick = async () => {
+  const name = el('nameInput').value.trim();
+  if(!name){ el('entryError').textContent = 'Poné tu nombre primero.'; return; }
+  sessionStorage.setItem('arcadeNajlis_playerName', name);
+  el('btnCreate').disabled = true;
+  try{
+    let code, exists = true, tries = 0;
+    do{
+      code = randCode();
+      const snap = await db.ref('penales/salas/'+code).get();
+      exists = snap.exists();
+      tries++;
+    } while(exists && tries < 8);
+
+    pid = randId();
+    roomCode = code;
+    await db.ref('penales/salas/'+code).set({
+      status:'lobby',
+      hostId: pid,
+      createdAt: firebase.database.ServerValue.TIMESTAMP,
+      players: { [pid]: {name, order:0} }
+    });
+    attachRoomListener();
+  } catch(e){
+    el('entryError').textContent = 'No se pudo crear la sala. Probá de nuevo.';
+    el('btnCreate').disabled = false;
+  }
+};
+
+el('btnJoin').onclick = async () => {
+  const name = el('nameInput').value.trim();
+  const code = el('codeInput').value.trim().toUpperCase();
+  el('entryError').textContent = '';
+  if(!name){ el('entryError').textContent = 'Poné tu nombre primero.'; return; }
+  if(code.length !== 4){ el('entryError').textContent = 'El código tiene 4 letras.'; return; }
+  sessionStorage.setItem('arcadeNajlis_playerName', name);
+  el('btnJoin').disabled = true;
+  try{
+    const snap = await db.ref('penales/salas/'+code).get();
+    if(!snap.exists()){ el('entryError').textContent = 'No existe esa sala.'; el('btnJoin').disabled=false; return; }
+    const data = snap.val();
+    if(data.status !== 'lobby'){ el('entryError').textContent = 'Esa partida ya arrancó.'; el('btnJoin').disabled=false; return; }
+    const currentPlayers = data.players || {};
+    const count = Object.keys(currentPlayers).length;
+    if(count >= 6){ el('entryError').textContent = 'La sala ya está llena (6/6).'; el('btnJoin').disabled=false; return; }
+    pid = randId();
+    roomCode = code;
+    await db.ref(`penales/salas/${code}/players/${pid}`).set({name, order: count});
+    attachRoomListener();
+  } catch(e){
+    el('entryError').textContent = 'Error al unirse. Probá de nuevo.';
+    el('btnJoin').disabled = false;
+  }
+};
+
+function attachRoomListener(){
+  db.ref('penales/salas/'+roomCode).on('value', snap => {
+    room = snap.val();
+    if(!room) return;
+    render();
+  });
+}
+
+// ---------- RENDER DISPATCH ----------
+function render(){
+  if(room.status === 'lobby') renderLobby();
+  else if(room.status === 'playing') renderGame();
+  else if(room.status === 'ended') renderFinal();
+}
+
+// ---------- LOBBY ----------
+function renderLobby(){
+  showScreen('screen-lobby');
+  el('lobbyCode').textContent = roomCode;
+  const players = room.players || {};
+  const ids = Object.keys(players).sort((a,b)=>players[a].order - players[b].order);
+  el('lobbyCount').textContent = ids.length;
+  el('lobbyList').innerHTML = ids.map(id => `
+    <div class="lobby-row">
+      <div class="lobby-dot"></div>
+      <span>${players[id].name}${id===room.hostId ? ' (host)':''}</span>
+      ${id===pid ? '<span class="me-tag">VOS</span>':''}
+    </div>`).join('');
+
+  const isHost = pid === room.hostId;
+  el('btnStartGame').style.display = (isHost && ids.length >= 2) ? 'block' : 'none';
+  el('lobbyWaiting').style.display = (!isHost) ? 'flex' : 'none';
+
+  el('btnStartGame').onclick = () => {
+    const order = ids;
+    const matches = buildMainMatches(order);
+    const goals = {}; order.forEach(id=>goals[id]=0);
+    db.ref('penales/salas/'+roomCode).update({
+      status:'playing',
+      game: { phase:'main', order, matches, matchIndex:0, goals, pick:null, reveal:null,
+              suddenTied:null, suddenGoals:null, winnerId:null }
+    });
+  };
+}
+
+// ---------- GAME ----------
+function renderGame(){
+  showScreen('screen-game');
+  const game = room.game;
+  const n = game.order.length;
+  const m = game.matches[game.matchIndex];
+
+  if(game.phase === 'main'){
+    const roundNum = Math.floor(game.matchIndex / n) + 1;
+    el('roundLabel').textContent = `RONDA ${roundNum}/5`;
+    el('matchLabel').textContent = `Tiro ${(game.matchIndex % n)+1}/${n}`;
+  } else {
+    el('roundLabel').textContent = 'DESEMPATE';
+    el('matchLabel').textContent = '';
+  }
+
+  renderMiniScoreboard();
+
+  const body = el('gameBody');
+
+  if(game.reveal && game.reveal.matchIndex === game.matchIndex){
+    renderResult(body, game.reveal, m);
+    scheduleAutoAdvance(game);
+    return;
+  }
+
+  const pick = game.pick || {};
+  const iAmKicker = m.kicker === pid;
+  const iAmGk = m.gk === pid;
+
+  if(!pick.kickerDone){
+    if(iAmKicker){
+      renderKickerUI(body, m);
+    } else {
+      renderWait(body, '⏳', `${nameOf(m.kicker)} está por patear`, `${nameOf(m.gk)} ataja`);
+    }
+  } else {
+    if(iAmGk){
+      renderGkUI(body, m);
+    } else {
+      renderWait(body, '🧤', `${nameOf(m.gk)} se está por tirar`, `Penal de ${nameOf(m.kicker)}`);
+    }
+  }
+}
+
+function renderWait(body, emoji, title, sub){
+  body.innerHTML = `
+    <div class="wait-screen">
+      <div class="big-emoji">${emoji}</div>
+      <div>
+        <div class="name" style="font-family:'Bebas Neue'; font-size:26px; color:var(--lime);">${title}</div>
+        <div style="font-size:12.5px; opacity:0.7; margin-top:4px;">${sub}</div>
+      </div>
+    </div>`;
+}
+
+function renderKickerUI(body, m){
+  body.innerHTML = `
+    <div class="turn-banner">
+      <div class="role">PATEÁS VOS</div>
+      <div class="name">${nameOf(m.kicker)}</div>
+      <div class="vs">vs ${nameOf(m.gk)} (arquero)</div>
+    </div>
+    <div class="goal-wrap">
+      <div class="zone-grid" id="zoneGrid">
+        ${['↖','↑','↗','↙','↓','↘'].map((ic,i)=>`<div class="zone" data-zone="${i}"><span class="icon">${ic}</span></div>`).join('')}
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <h3 style="margin-bottom:10px; font-size:15px; text-align:center;">Potencia del tiro</h3>
+      <div class="power-row" id="powerRow">
+        <div class="power-btn" data-power="suave"><div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>SUAVE</div>
+        <div class="power-btn" data-power="medio"><div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>MEDIA</div>
+        <div class="power-btn" data-power="fuerte"><div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>FUERTE</div>
+      </div>
+    </div>
+    <button class="big" id="btnConfirmKick" style="margin-top:12px;" disabled>CONFIRMAR TIRO</button>
+  `;
+  localPick = { kickZone:null, power:null };
+  const grid = el('zoneGrid');
+  grid.addEventListener('click', e=>{
+    const z = e.target.closest('.zone'); if(!z) return;
+    localPick.kickZone = parseInt(z.dataset.zone);
+    grid.querySelectorAll('.zone').forEach(x=>x.classList.remove('selected'));
+    z.classList.add('selected');
+    checkKickReady();
+  });
+  const prow = el('powerRow');
+  prow.addEventListener('click', e=>{
+    const b = e.target.closest('.power-btn'); if(!b) return;
+    localPick.power = b.dataset.power;
+    prow.querySelectorAll('.power-btn').forEach(x=>x.classList.remove('selected'));
+    b.classList.add('selected');
+    checkKickReady();
+  });
+  function checkKickReady(){
+    el('btnConfirmKick').disabled = !(localPick.kickZone!==null && localPick.power!==null);
+  }
+  el('btnConfirmKick').onclick = () => {
+    el('btnConfirmKick').disabled = true;
+    db.ref(`penales/salas/${roomCode}/game/pick`).set({
+      kickZone: localPick.kickZone, power: localPick.power, kickerDone:true
+    });
+  };
+}
+
+function renderGkUI(body, m){
+  body.innerHTML = `
+    <div class="turn-banner">
+      <div class="role">ATAJÁS VOS</div>
+      <div class="name">${nameOf(m.gk)}</div>
+      <div class="vs">Penal de ${nameOf(m.kicker)}</div>
+    </div>
+    <div class="goal-wrap">
+      <div class="zone-grid" id="zoneGridGk">
+        ${['↖','↑','↗','↙','↓','↘'].map((ic,i)=>`<div class="zone" data-zone="${i}"><span class="icon">${ic}</span></div>`).join('')}
+      </div>
+    </div>
+    <button class="big" id="btnConfirmGk" style="margin-top:12px;" disabled>CONFIRMAR ATAJADA</button>
+  `;
+  let chosen = null;
+  const grid = el('zoneGridGk');
+  grid.addEventListener('click', e=>{
+    const z = e.target.closest('.zone'); if(!z) return;
+    chosen = parseInt(z.dataset.zone);
+    grid.querySelectorAll('.zone').forEach(x=>x.classList.remove('selected'));
+    z.classList.add('selected');
+    el('btnConfirmGk').disabled = false;
+  });
+  el('btnConfirmGk').onclick = () => {
+    el('btnConfirmGk').disabled = true;
+    const game = room.game;
+    const pick = game.pick;
+    const same = pick.kickZone === chosen;
+    const outcome = resolveOutcome(same, pick.power);
+    const goalScored = outcome === 'gol';
+    const updates = {};
+    updates[`game/pick/gkZone`] = chosen;
+    updates[`game/pick/gkDone`] = true;
+    updates[`game/reveal`] = {
+      outcome, kickZone: pick.kickZone, gkZone: chosen,
+      kicker: m.kicker, gk: m.gk, matchIndex: game.matchIndex
+    };
+    if(goalScored){
+      if(game.phase === 'main'){
+        const cur = (game.goals && game.goals[m.kicker]) || 0;
+        updates[`game/goals/${m.kicker}`] = cur + 1;
+      } else {
+        const cur = (game.suddenGoals && game.suddenGoals[m.kicker]) || 0;
+        updates[`game/suddenGoals/${m.kicker}`] = cur + 1;
+      }
+    }
+    db.ref(`penales/salas/${roomCode}`).update(updates);
+  };
+}
+
+function renderResult(body, reveal, m){
+  const ballPos = ZONE_POS[reveal.kickZone];
+  const keeperPos = ZONE_POS[reveal.gkZone];
+  body.innerHTML = `
+    <div class="goal-wrap">
+      <div class="zone-grid">
+        <div class="zone"></div><div class="zone"></div><div class="zone"></div>
+        <div class="zone"></div><div class="zone"></div><div class="zone"></div>
+      </div>
+      <div class="ball-sprite" id="ballSprite">⚽</div>
+      <div class="keeper-sprite" id="keeperSprite">🧤</div>
+    </div>
+    <div class="result-banner">
+      <div class="word ${reveal.outcome}" id="resultWord"></div>
+      <div id="resultSub" style="font-size:13px; opacity:0.7;"></div>
+    </div>
+  `;
+  const ball = el('ballSprite'), keeper = el('keeperSprite');
+  requestAnimationFrame(()=>{
+    setTimeout(()=>{
+      ball.style.bottom = 'auto'; ball.style.top = ballPos.top+'%'; ball.style.left = ballPos.left+'%';
+      ball.style.transform = 'translate(-50%,-50%)';
+      keeper.style.left = keeperPos.left+'%'; keeper.style.top = keeperPos.top+'%';
+    }, 60);
+    setTimeout(()=>{
+      if(reveal.outcome==='gol'){ el('resultWord').textContent='¡GOOOOL!'; el('resultSub').textContent = nameOf(reveal.kicker)+' anota'; }
+      else if(reveal.outcome==='atajada'){ el('resultWord').textContent='¡ATAJADA!'; el('resultSub').textContent = nameOf(reveal.gk)+' la saca'; }
+      else { el('resultWord').textContent='¡AFUERA!'; el('resultSub').textContent = 'Se fue muy fuerte, pegó afuera'; }
+    }, 600);
+  });
+}
+
+function scheduleAutoAdvance(game){
+  const key = game.phase + '-' + game.matchIndex;
+  if(lastAutoAdvanceFor === key) return;
+  lastAutoAdvanceFor = key;
+  setTimeout(()=> advanceMatch(game.matchIndex), 2600);
+}
+
+function advanceMatch(expectedIndex){
+  db.ref(`penales/salas/${roomCode}/game`).transaction(game => {
+    if(!game) return game;
+    if(game.matchIndex !== expectedIndex) return; // ya avanzó otro cliente, no tocar
+    const nextIndex = game.matchIndex + 1;
+    if(nextIndex < game.matches.length){
+      game.matchIndex = nextIndex;
+      game.pick = null;
+      game.reveal = null;
+      return game;
+    }
+    // se terminó la tanda actual
+    if(game.phase === 'main'){
+      const ids = game.order;
+      const goals = game.goals || {};
+      let max = -1;
+      ids.forEach(id => { max = Math.max(max, goals[id]||0); });
+      const tied = ids.filter(id => (goals[id]||0) === max);
+      if(tied.length === 1){
+        game.winnerId = tied[0];
+      } else {
+        game.phase = 'sudden';
+        game.suddenTied = tied;
+        game.suddenGoals = {}; tied.forEach(id=> game.suddenGoals[id]=0);
+        game.matches = buildSuddenMatches(tied);
+        game.matchIndex = 0;
+      }
+      game.pick = null; game.reveal = null;
+    } else {
+      const ids = game.suddenTied;
+      const sg = game.suddenGoals || {};
+      let max = -1;
+      ids.forEach(id => { max = Math.max(max, sg[id]||0); });
+      const tied = ids.filter(id => (sg[id]||0) === max);
+      if(tied.length === 1){
+        game.winnerId = tied[0];
+      } else {
+        game.suddenTied = tied;
+        game.suddenGoals = {}; tied.forEach(id=> game.suddenGoals[id]=0);
+        game.matches = buildSuddenMatches(tied);
+        game.matchIndex = 0;
+      }
+      game.pick = null; game.reveal = null;
+    }
+    return game;
+  }, (err, committed, snap) => {
+    if(committed && snap && snap.val() && snap.val().winnerId){
+      db.ref(`penales/salas/${roomCode}/status`).set('ended');
+    }
+  });
+}
+
+function renderMiniScoreboard(){
+  const game = room.game;
+  const box = el('miniScoreboard');
+  if(game.phase === 'main'){
+    const goals = game.goals || {};
+    const max = Math.max(...game.order.map(id=>goals[id]||0));
+    box.innerHTML = '<h3 style="font-size:13px; margin-bottom:8px; opacity:0.8;">TABLA</h3>' +
+      game.order.map(id => `<div class="score-row ${(goals[id]||0)===max && max>0 ? 'leader':''} ${id===pid?'me':''}">
+        <span>${nameOf(id)}${id===pid?' (vos)':''}</span><span class="goals">${goals[id]||0}</span></div>`).join('');
+  } else {
+    const sg = game.suddenGoals || {};
+    box.innerHTML = '<h3 style="font-size:13px; margin-bottom:8px; opacity:0.8;">DESEMPATE</h3>' +
+      (game.suddenTied||[]).map(id => `<div class="score-row ${id===pid?'me':''}">
+        <span>${nameOf(id)}${id===pid?' (vos)':''}</span><span class="goals">${sg[id]||0}</span></div>`).join('');
+  }
+}
+
+// ---------- FINAL ----------
+function renderFinal(){
+  showScreen('screen-final');
+  const game = room.game;
+  const goals = game.goals || {};
+  const ids = game.order.slice().sort((a,b)=>(goals[b]||0)-(goals[a]||0));
+  const max = Math.max(...ids.map(id=>goals[id]||0));
+  el('finalScoreboard').innerHTML = ids.map(id => `
+    <div class="score-row ${(goals[id]||0)===max?'leader':''} ${id===pid?'me':''}">
+      <span>${nameOf(id)}${id===pid?' (vos)':''}</span><span class="goals">${goals[id]||0}</span>
+    </div>`).join('');
+  el('winnerName').textContent = nameOf(game.winnerId);
+
+  const isHost = pid === room.hostId;
+  el('btnRematch').style.display = isHost ? 'block' : 'none';
+  el('finalWaiting').style.display = isHost ? 'none' : 'flex';
+  el('btnRematch').onclick = () => {
+    db.ref(`penales/salas/${roomCode}`).update({ status:'lobby', game:null });
+  };
+}
+</script>
+</body>
+</html>
