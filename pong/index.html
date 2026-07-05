@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Arcade Najlis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B0B12;
+    --bg2:#14121F;
+    --gold:#FFC145;
+    --pink:#FF4D8D;
+    --ink:#F2F1F8;
+    --dim: rgba(242,241,248,0.55);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%; margin:0;}
+  body{
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(circle at 20% 0%, rgba(255,193,69,0.10), transparent 45%),
+      radial-gradient(circle at 85% 100%, rgba(255,77,141,0.10), transparent 45%),
+      var(--bg);
+    min-height:100vh;
+    display:flex; justify-content:center; align-items:flex-start;
+  }
+  #app{ width:100%; max-width:460px; padding:32px 18px 40px; min-height:100vh; display:flex; flex-direction:column; }
+
+  .marquee{ text-align:center; margin-bottom:6px; }
+  .marquee h1{
+    font-family:'Press Start 2P', monospace;
+    font-size:22px; line-height:1.6;
+    color:var(--gold);
+    text-shadow: 0 0 8px rgba(255,193,69,0.55), 0 0 22px rgba(255,193,69,0.25);
+    letter-spacing:1px;
+    margin:0;
+  }
+  .marquee .sub{ font-size:11px; color:var(--dim); letter-spacing:3px; text-transform:uppercase; margin-top:8px; }
+
+  .bulbs{ display:flex; justify-content:center; gap:6px; margin:18px 0 26px; }
+  .bulb{ width:6px; height:6px; border-radius:50%; background:var(--pink); opacity:0.35; animation:blink 1.6s infinite; }
+  .bulb:nth-child(odd){ animation-delay:.4s; background:var(--gold);}
+  @keyframes blink{ 0%,100%{opacity:.25;} 50%{opacity:1;} }
+
+  .coin-card{
+    background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:16px;
+    padding:18px;
+    margin-bottom:22px;
+  }
+  .coin-card label{ font-size:11px; letter-spacing:2px; color:var(--dim); text-transform:uppercase; display:block; margin-bottom:8px; }
+  .coin-card input{
+    width:100%; padding:14px; border-radius:10px; border:1px solid rgba(255,255,255,0.12);
+    background:rgba(0,0,0,0.35); color:var(--ink); font-size:16px; font-weight:600;
+  }
+  .coin-card input::placeholder{ color:rgba(242,241,248,0.3); }
+  .hint{ font-size:11px; color:var(--dim); margin-top:8px; }
+
+  .games{ display:flex; flex-direction:column; gap:16px; }
+  .cab{
+    position:relative;
+    border-radius:18px;
+    padding:22px 18px;
+    border:1px solid rgba(255,255,255,0.10);
+    cursor:pointer;
+    overflow:hidden;
+    transition:transform .15s ease, opacity .2s;
+    text-decoration:none;
+    color:var(--ink);
+    display:block;
+  }
+  .cab:active{ transform:scale(0.98); }
+  .cab.disabled{ opacity:0.35; pointer-events:none; }
+  .cab .glow{ position:absolute; inset:-40% -10% auto auto; width:160px; height:160px; border-radius:50%; filter:blur(40px); opacity:0.35; }
+  .cab-pong{ background:linear-gradient(160deg, #12162B, #090B14); }
+  .cab-pong .glow{ background:#7CE7FF; }
+  .cab-pen{ background:linear-gradient(160deg, #0F241A, #081A12); }
+  .cab-pen .glow{ background:#D8F34D; }
+
+  .cab .eyebrow{ font-family:'Press Start 2P'; font-size:9px; letter-spacing:1px; color:var(--dim); }
+  .cab h2{ font-family:'Press Start 2P'; font-size:17px; margin:8px 0 6px; position:relative; z-index:1; }
+  .cab-pong h2{ color:#7CE7FF; }
+  .cab-pen h2{ color:#D8F34D; }
+  .cab p{ font-size:12.5px; color:var(--dim); margin:0; max-width:85%; position:relative; z-index:1; }
+  .cab .players{ margin-top:10px; font-size:11px; letter-spacing:1px; color:var(--dim); }
+  .cab .arrow{ position:absolute; right:18px; bottom:18px; font-size:20px; opacity:0.5; }
+
+  .footer-note{ margin-top:auto; text-align:center; font-size:10px; color:var(--dim); padding-top:24px; letter-spacing:1px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="marquee">
+    <h1>ARCADE<br>NAJLIS</h1>
+    <div class="sub">Insertá tu nombre para jugar</div>
+  </div>
+
+  <div class="bulbs">
+    <div class="bulb"></div><div class="bulb"></div><div class="bulb"></div>
+    <div class="bulb"></div><div class="bulb"></div><div class="bulb"></div><div class="bulb"></div>
+  </div>
+
+  <div class="coin-card">
+    <label for="nameInput">Tu nombre de jugador</label>
+    <input id="nameInput" placeholder="Ej: Ariel" maxlength="16" autocomplete="off">
+    <div class="hint" id="hint">Elegí un juego para arrancar 👇</div>
+  </div>
+
+  <div class="games">
+    <a class="cab cab-pong disabled" id="cabPong" href="pong/index.html">
+      <div class="glow"></div>
+      <div class="eyebrow">01 · 1 VS 1 EN TIEMPO REAL</div>
+      <h2>COSMIC PONG</h2>
+      <p>Duelo espacial de pong online contra otro jugador.</p>
+      <div class="arrow">→</div>
+    </a>
+
+    <a class="cab cab-pen disabled" id="cabPenales" href="penales/index.html">
+      <div class="glow"></div>
+      <div class="eyebrow">02 · 2 A 6 JUGADORES</div>
+      <h2>DEATH<br>PENALTIES</h2>
+      <p>Penales por turnos online: dirección + potencia, con arquero en vivo.</p>
+      <div class="arrow">→</div>
+    </a>
+  </div>
+
+  <div class="footer-note">ARCADE NAJLIS © — hecho en casa</div>
+</div>
+
+<script>
+  const input = document.getElementById('nameInput');
+  const cabPong = document.getElementById('cabPong');
+  const cabPenales = document.getElementById('cabPenales');
+  const hint = document.getElementById('hint');
+
+  const saved = sessionStorage.getItem('arcadeNajlis_playerName');
+  if(saved){ input.value = saved; }
+
+  function sync(){
+    const name = input.value.trim();
+    const ok = name.length > 0;
+    cabPong.classList.toggle('disabled', !ok);
+    cabPenales.classList.toggle('disabled', !ok);
+    hint.textContent = ok ? 'Elegí un juego para arrancar 👇' : 'Escribí tu nombre para desbloquear los juegos';
+    if(ok){ sessionStorage.setItem('arcadeNajlis_playerName', name); }
+  }
+  input.addEventListener('input', sync);
+  sync();
+
+  [cabPong, cabPenales].forEach(cab=>{
+    cab.addEventListener('click', (e)=>{
+      if(cab.classList.contains('disabled')){ e.preventDefault(); input.focus(); return; }
+      sessionStorage.setItem('arcadeNajlis_playerName', input.value.trim());
+    });
+  });
+</script>
+</body>
+</html>
