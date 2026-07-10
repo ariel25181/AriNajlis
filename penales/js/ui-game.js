@@ -1,0 +1,386 @@
+// ui-game.js — pantalla de juego: escena en perspectiva, apuntado libre + potencia,
+// cuenta regresiva simultánea, animación de resultado y tabla en vivo.
+import { State, resetTurnLocalState } from './state.js';
+import { el, nameOf, clamp01, showScreen } from './utils.js';
+import { logError, safeCall } from './logger.js';
+import { TURN_DURATION, GRACE } from './matches.js';
+import { submitLocalFinal, fillDefaultsIfMissing, tryResolveTurn, advanceMatch } from './turn.js';
+
+// Coordenadas del "arco" dentro de la escena, en % de la caja .scene
+// (arco chico y lejano, cámara atrás del pateador, como en la referencia de FIFA)
+const GOAL_BOX = { x0: 32, x1: 68, y0: 15, y1: 34 };
+
+function sceneBackgroundHTML(){
+  return `
+    <div class="floodlight l"></div>
+    <div class="floodlight r"></div>
+    <div class="crowd"></div>
+    <div class="adboard"></div>
+    <div class="pitch"></div>
+    <div class="penalty-arc"></div>
+    <div class="goal-face"></div>
+    <div class="goal-post top"></div>
+    <div class="goal-post left"></div>
+    <div class="goal-post right"></div>
+  `;
+}
+
+// Arquero: figura chica y lejana (arma con divs, sin emojis), se reposiciona desde JS.
+function figureHTML(kind, id){
+  const hasGloves = kind === 'keeper';
+  return `
+    <div class="figure ${kind}" id="${id}">
+      <div class="f-head"></div>
+      <div class="f-torso"></div>
+      <div class="f-arm l">${hasGloves ? '<div class="f-glove"></div>' : ''}</div>
+      <div class="f-arm r">${hasGloves ? '<div class="f-glove"></div>' : ''}</div>
+      <div class="f-leg l"></div>
+      <div class="f-leg r"></div>
+    </div>
+  `;
+}
+
+// Pateador: visto de espaldas, grande, recortado en primer plano (fijo, no se mueve).
+function kickerBackHTML(){
+  return `
+    <div class="kicker-back">
+      <div class="kb-jersey"><span class="kb-number">9</span></div>
+      <div class="kb-shorts"></div>
+      <div class="kb-legs">
+        <div class="kb-leg"><div class="kb-sock"></div></div>
+        <div class="kb-leg"><div class="kb-sock"></div></div>
+      </div>
+    </div>
+  `;
+}
+
+// Carteles de nombre estilo HUD, abajo a cada lado de la escena.
+function hudPlatesHTML(kickerName, gkName){
+  return `
+    <div class="hud-plate left"><span class="hud-dot"></span>${kickerName}</div>
+    <div class="hud-plate right">${gkName}<span class="hud-dot gk"></span></div>
+  `;
+}
+
+export function renderGame(){
+  try{
+    showScreen('screen-game');
+    const room = State.room;
+    const game = room.game;
+    if(!game || !Array.isArray(game.matches) || !game.matches[game.matchIndex]){
+      logError('renderGame', new Error('Estado de juego inválido o corrupto'), { game });
+      return;
+    }
+    const n = game.order.length;
+    const m = game.matches[game.matchIndex];
+
+    if(game.phase === 'main'){
+      const roundNum = Math.floor(game.matchIndex / n) + 1;
+      el('roundLabel').textContent = `RONDA ${roundNum}/5`;
+      el('matchLabel').textContent = `Tiro ${(game.matchIndex % n)+1}/${n}`;
+    } else {
+      el('roundLabel').textContent = 'DESEMPATE';
+      el('matchLabel').textContent = '';
+    }
+
+    renderMiniScoreboard(game);
+
+    const body = el('gameBody');
+    const matchKey = game.phase + '-' + game.matchIndex;
+
+    if(game.reveal && game.reveal.matchIndex === game.matchIndex){
+      renderResult(body, game.reveal, m);
+      scheduleAutoAdvance(game);
+      State.renderedMatchKey = null;
+      return;
+    }
+
+    const turn = game.turn;
+    if(turn && turn.kickerFinal && turn.gkFinal && !turn.resolved){
+      safeCall('tryResolveTurn', () => tryResolveTurn(game.matchIndex));
+    }
+
+    const iAmKicker = m.kicker === State.pid;
+    const iAmGk = m.gk === State.pid;
+
+    if(State.renderedMatchKey !== matchKey){
+      State.renderedMatchKey = matchKey;
+      resetTurnLocalState();
+      buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn);
+    }
+    updateCountdownUI(turn);
+  } catch(e){
+    logError('renderGame', e);
+  }
+}
+
+function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
+  try{
+    const role = iAmKicker ? 'PATEÁS VOS' : iAmGk ? 'ATAJÁS VOS' : 'MIRÁS';
+    body.innerHTML = `
+      <div class="turn-banner">
+        <div class="role">${role}</div>
+        <div class="name">${iAmKicker ? nameOf(m.kicker) : iAmGk ? nameOf(m.gk) : (nameOf(m.kicker)+' vs '+nameOf(m.gk))}</div>
+        <div class="vs">${iAmKicker ? 'vs '+nameOf(m.gk)+' (arquero)' : iAmGk ? 'Penal de '+nameOf(m.kicker) : '¡Definen al mismo tiempo!'}</div>
+      </div>
+      <div class="countdown-wrap">
+        <div class="countdown-ring" id="ring">
+          <svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" stroke="rgba(255,255,255,0.15)" stroke-width="5" fill="none"/>
+            <circle id="ringProgress" cx="23" cy="23" r="19" stroke="var(--lime)" stroke-width="5" fill="none"
+              stroke-dasharray="119" stroke-dashoffset="0" stroke-linecap="round"/></svg>
+          <span id="ringNum">3</span>
+        </div>
+        <div class="countdown-label">Definiendo…</div>
+      </div>
+      <div class="scene" id="scene">
+        ${sceneBackgroundHTML()}
+        <div class="ground-shadow" id="keeperShadow"></div>
+        ${figureHTML('keeper', 'keeperSprite')}
+        ${kickerBackHTML()}
+        ${hudPlatesHTML(nameOf(m.kicker), nameOf(m.gk))}
+        <div class="reticle" id="kickReticle" style="display:none;"></div>
+        <div class="reticle gk" id="gkReticle" style="display:none;"></div>
+        <div class="fx-flash" id="fxFlash"></div>
+        <div class="drag-surface" id="dragSurface"></div>
+      </div>
+      <div class="power-wrap" id="powerWrap" style="display:none;">
+        <label>Potencia</label>
+        <input type="range" id="powerSlider" min="0" max="100" value="50">
+        <span class="power-tag" id="powerTag">MEDIA</span>
+      </div>
+      <div class="locked-note" id="lockedNote" style="display:none;">✅ Elección enviada — esperando al resto…</div>
+    `;
+
+    positionKeeper(0.5, 0.5);
+    positionKickReticle(0.5, 0.5);
+    positionGkReticle(0.5, 0.5);
+
+    if(iAmKicker || iAmGk){
+      el(iAmKicker ? 'kickReticle' : 'gkReticle').style.display = 'flex';
+      if(iAmKicker) el('powerWrap').style.display = 'flex';
+      wireDragControls(iAmKicker, iAmGk);
+    }
+
+    wireCountdown(m, iAmKicker, iAmGk, turn);
+  } catch(e){
+    logError('buildInteractiveScreen', e, { match: m });
+  }
+}
+
+function wireDragControls(iAmKicker, iAmGk){
+  try{
+    const surface = el('dragSurface');
+
+    function pointToNorm(clientX, clientY){
+      const r = el('scene').getBoundingClientRect();
+      const gx0 = r.left + r.width*(GOAL_BOX.x0/100), gx1 = r.left + r.width*(GOAL_BOX.x1/100);
+      const gy0 = r.top + r.height*(GOAL_BOX.y0/100), gy1 = r.top + r.height*(GOAL_BOX.y1/100);
+      return { x: clamp01((clientX-gx0)/(gx1-gx0)), y: clamp01((clientY-gy0)/(gy1-gy0)) };
+    }
+
+    function handleMove(clientX, clientY){
+      const p = pointToNorm(clientX, clientY);
+      if(iAmKicker){ State.localKick.x = p.x; State.localKick.y = p.y; positionKickReticle(p.x, p.y); }
+      else { State.localGk.x = p.x; State.localGk.y = p.y; positionGkReticle(p.x, p.y); positionKeeper(p.x, p.y); }
+    }
+
+    surface.addEventListener('pointerdown', e => {
+      try{
+        if(State.submitted) return;
+        handleMove(e.clientX, e.clientY);
+        surface.setPointerCapture(e.pointerId);
+      } catch(err){ logError('dragSurface.pointerdown', err); }
+    });
+    surface.addEventListener('pointermove', e => {
+      try{
+        if(State.submitted) return;
+        if(e.buttons !== 1 && e.pointerType === 'mouse') return;
+        handleMove(e.clientX, e.clientY);
+      } catch(err){ logError('dragSurface.pointermove', err); }
+    });
+
+    if(iAmKicker){
+      const slider = el('powerSlider');
+      slider.addEventListener('input', () => {
+        try{
+          if(State.submitted) return;
+          State.localKick.power = slider.value/100;
+          el('powerTag').textContent = State.localKick.power < 0.34 ? 'SUAVE' : State.localKick.power < 0.67 ? 'MEDIA' : 'FUERTE';
+        } catch(err){ logError('powerSlider.input', err); }
+      });
+    }
+  } catch(e){
+    logError('wireDragControls', e);
+  }
+}
+
+function wireCountdown(m, iAmKicker, iAmGk, turn){
+  try{
+    const startedAt = turn.startedAt;
+    const duration = turn.duration || TURN_DURATION;
+
+    function tick(){
+      try{
+        const remaining = Math.max(0, duration - (Date.now() - startedAt));
+        updateRing(remaining, duration);
+        if(remaining <= 0){
+          submitLocalFinalForRole(m, iAmKicker, iAmGk);
+          return;
+        }
+        State.countdownTimer = setTimeout(tick, 80);
+      } catch(e){
+        logError('countdown.tick', e);
+      }
+    }
+    tick();
+
+    State.fallbackTimer = setTimeout(() => {
+      safeCall('fillDefaultsIfMissing', () => fillDefaultsIfMissing(State.room.game.matchIndex));
+    }, duration + GRACE);
+  } catch(e){
+    logError('wireCountdown', e);
+  }
+}
+
+function submitLocalFinalForRole(m, iAmKicker, iAmGk){
+  try{
+    if(State.submitted) return;
+    State.submitted = true;
+    clearTimeout(State.countdownTimer);
+    const lockedNote = el('lockedNote'); if(lockedNote) lockedNote.style.display = 'block';
+    const dragSurface = el('dragSurface'); if(dragSurface) dragSurface.style.pointerEvents = 'none';
+
+    if(iAmKicker){
+      submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, power: State.localKick.power });
+    } else if(iAmGk){
+      submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y });
+    }
+  } catch(e){
+    logError('submitLocalFinalForRole', e);
+  }
+}
+
+function updateCountdownUI(turn){
+  try{
+    const startedAt = turn.startedAt, duration = turn.duration || TURN_DURATION;
+    const remaining = Math.max(0, duration - (Date.now() - startedAt));
+    updateRing(remaining, duration);
+  } catch(e){
+    logError('updateCountdownUI', e);
+  }
+}
+
+function updateRing(remaining, duration){
+  const ringNum = el('ringNum'), ringProg = el('ringProgress');
+  if(!ringNum || !ringProg) return;
+  ringNum.textContent = Math.ceil(remaining/1000);
+  const frac = remaining/duration;
+  ringProg.setAttribute('stroke-dashoffset', (119*(1-frac)).toFixed(1));
+}
+
+function toScenePct(x, y){
+  return {
+    left: GOAL_BOX.x0 + x*(GOAL_BOX.x1-GOAL_BOX.x0),
+    top: GOAL_BOX.y0 + y*(GOAL_BOX.y1-GOAL_BOX.y0)
+  };
+}
+function positionKeeper(x,y){
+  const p = toScenePct(x,y);
+  const k = el('keeperSprite');
+  if(k){
+    k.style.left = p.left+'%'; k.style.top = p.top+'%';
+    const lean = Math.max(-55, Math.min(55, (x-0.5)*90));
+    const lift = Math.min(9, Math.abs(x-0.5)*22);
+    k.style.transform = `rotate(${lean.toFixed(1)}deg) translateY(-${lift.toFixed(1)}px) scale(0.8)`;
+  }
+  const shadow = el('keeperShadow');
+  if(shadow){
+    shadow.style.left = p.left+'%'; shadow.style.top = GOAL_BOX.y1+'%';
+    shadow.style.transform = 'translate(-50%,-4px) scale(0.7)';
+  }
+}
+function positionKickReticle(x,y){ const p = toScenePct(x,y); const r = el('kickReticle'); if(r){ r.style.left=p.left+'%'; r.style.top=p.top+'%'; } }
+function positionGkReticle(x,y){ const p = toScenePct(x,y); const r = el('gkReticle'); if(r){ r.style.left=p.left+'%'; r.style.top=p.top+'%'; } }
+
+function renderResult(body, reveal, m){
+  try{
+    body.innerHTML = `
+      <div class="turn-banner"><div class="vs">${nameOf(reveal.kicker)} patea — ${nameOf(reveal.gk)} ataja</div></div>
+      <div class="scene" id="scene">
+        ${sceneBackgroundHTML()}
+        <div class="ground-shadow" id="keeperShadow"></div>
+        ${figureHTML('keeper', 'keeperSprite')}
+        ${kickerBackHTML()}
+        ${hudPlatesHTML(nameOf(reveal.kicker), nameOf(reveal.gk))}
+        <div class="ball-sprite" id="ballSprite"></div>
+        <div class="fx-flash" id="fxFlash"></div>
+      </div>
+      <div class="result-banner">
+        <div class="word ${reveal.outcome}" id="resultWord"></div>
+        <div id="resultSub" style="font-size:13px; opacity:0.7;"></div>
+      </div>
+    `;
+    const kPos = toScenePct(reveal.kick.x, reveal.kick.y);
+    const gPos = toScenePct(reveal.gkPos.x, reveal.gkPos.y);
+    positionKeeper(reveal.gkPos.x, reveal.gkPos.y);
+
+    const ball = el('ballSprite');
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try{
+          ball.style.left = kPos.left+'%'; ball.style.top = kPos.top+'%'; ball.style.bottom = 'auto';
+          ball.style.transform = 'translate(-50%,-50%) scale(0.55)';
+        } catch(e){ logError('renderResult.ballMove', e); }
+      }, 60);
+      setTimeout(() => {
+        try{
+          if(reveal.outcome === 'gol'){
+            el('resultWord').textContent = '¡GOOOOL!';
+            el('resultSub').textContent = nameOf(reveal.kicker)+' anota';
+            const flash = el('fxFlash'); if(flash) flash.classList.add('show');
+          } else if(reveal.outcome === 'atajada'){
+            el('resultWord').textContent = '¡ATAJADA!';
+            el('resultSub').textContent = nameOf(reveal.gk)+' la saca';
+            ball.style.left = gPos.left+'%'; ball.style.top = gPos.top+'%';
+          } else {
+            el('resultWord').textContent = '¡AFUERA!';
+            el('resultSub').textContent = 'Se fue muy fuerte, pegó afuera';
+          }
+        } catch(e){ logError('renderResult.wordUpdate', e); }
+      }, 620);
+    });
+  } catch(e){
+    logError('renderResult', e, { reveal });
+  }
+}
+
+function scheduleAutoAdvance(game){
+  try{
+    const key = game.phase + '-' + game.matchIndex;
+    if(State.lastAutoAdvanceFor === key) return;
+    State.lastAutoAdvanceFor = key;
+    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), 2600);
+  } catch(e){
+    logError('scheduleAutoAdvance', e);
+  }
+}
+
+function renderMiniScoreboard(game){
+  try{
+    const box = el('miniScoreboard');
+    if(game.phase === 'main'){
+      const goals = game.goals || {};
+      const max = Math.max(0, ...game.order.map(id => goals[id]||0));
+      box.innerHTML = '<h3 style="font-size:13px; margin-bottom:8px; opacity:0.8;">TABLA</h3>' +
+        game.order.map(id => `<div class="score-row ${(goals[id]||0)===max && max>0 ? 'leader':''} ${id===State.pid?'me':''}">
+          <span>${nameOf(id)}${id===State.pid?' (vos)':''}</span><span class="goals">${goals[id]||0}</span></div>`).join('');
+    } else {
+      const sg = game.suddenGoals || {};
+      box.innerHTML = '<h3 style="font-size:13px; margin-bottom:8px; opacity:0.8;">DESEMPATE</h3>' +
+        (game.suddenTied||[]).map(id => `<div class="score-row ${id===State.pid?'me':''}">
+          <span>${nameOf(id)}${id===State.pid?' (vos)':''}</span><span class="goals">${sg[id]||0}</span></div>`).join('');
+    }
+  } catch(e){
+    logError('renderMiniScoreboard', e);
+  }
+}

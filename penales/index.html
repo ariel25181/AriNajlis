@@ -11,9 +11,10 @@
 <style>
   :root{
     --pitch:#0B3D2E; --pitch-dark:#082A20; --chalk:#F5F3EC; --lime:#D8F34D;
-    --red:#E63946; --line: rgba(245,243,236,0.35); --net: rgba(245,243,236,0.12);
+    --red:#E63946; --line: rgba(245,243,236,0.35); --net: rgba(245,243,236,0.14);
+    --sky1:#1a5c7a; --sky2:#0d3348;
   }
-  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation;}
   html,body{height:100%;}
   body{
     margin:0; font-family:'Inter',sans-serif;
@@ -23,7 +24,7 @@
     color:var(--chalk); min-height:100vh; display:flex; justify-content:center; align-items:flex-start;
   }
   #app{ width:100%; max-width:480px; min-height:100vh; background:rgba(4,25,18,0.55);
-        display:flex; flex-direction:column; padding:18px 16px 32px; }
+        display:flex; flex-direction:column; padding:18px 16px 32px; overflow-x:hidden; }
   h1,h2,h3{font-family:'Bebas Neue',sans-serif; letter-spacing:1px; margin:0;}
   h1{font-size:34px; color:var(--lime); text-align:center; text-shadow:0 2px 0 rgba(0,0,0,0.4);}
   .subtitle{text-align:center; opacity:0.75; font-size:12.5px; margin-top:-4px; margin-bottom:16px;}
@@ -59,38 +60,140 @@
 
   .turn-banner{text-align:center;}
   .turn-banner .role{font-size:13px; opacity:0.7; text-transform:uppercase; letter-spacing:2px;}
-  .turn-banner .name{font-family:'Bebas Neue'; font-size:32px; color:var(--lime);}
+  .turn-banner .name{font-family:'Bebas Neue'; font-size:30px; color:var(--lime);}
   .turn-banner .vs{font-size:12px; opacity:0.6;}
 
-  .goal-wrap{ position:relative;
-    background: linear-gradient(rgba(245,243,236,0.03), rgba(245,243,236,0.03)),
-      repeating-linear-gradient(90deg, var(--net) 0 2px, transparent 2px 18px),
-      repeating-linear-gradient(0deg, var(--net) 0 2px, transparent 2px 18px);
-    border:5px solid var(--chalk); border-bottom:none; border-radius:6px 6px 0 0; aspect-ratio:4/3; padding:8px; }
-  .zone-grid{display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(2,1fr); gap:6px; height:100%;}
-  .zone{border:2px dashed rgba(245,243,236,0.25); border-radius:8px; display:flex; align-items:center; justify-content:center;
-    font-size:20px; background:rgba(0,0,0,0.05); cursor:pointer; transition:.12s; position:relative;}
-  .zone:active{transform:scale(0.94);}
-  .zone.selected{background:rgba(216,243,77,0.35); border-color:var(--lime); box-shadow:0 0 0 2px var(--lime) inset;}
-  .zone .icon{opacity:0.5; font-size:18px;}
-  .ball-sprite{position:absolute; font-size:26px; left:50%; bottom:4px; transform:translateX(-50%);
-    transition:left .55s cubic-bezier(.2,.8,.3,1), bottom .55s cubic-bezier(.2,.8,.3,1), transform .55s; z-index:5;
-    filter:drop-shadow(0 3px 2px rgba(0,0,0,0.5));}
-  .keeper-sprite{position:absolute; font-size:32px; left:50%; top:50%; transform:translate(-50%,-50%);
-    transition:left .5s ease, top .5s ease; z-index:4;}
+  /* ---- Perspective goal scene, cámara detrás del pateador estilo videojuego ---- */
+  .scene{
+    position:relative; border-radius:14px; overflow:hidden;
+    aspect-ratio: 4/3.4;
+    background: linear-gradient(180deg, #0d3a52 0%, #0a2c3f 22%, #1d5c3a 22%, #1d5c3a 34%, #17492e 34%, #0d2c1c 100%);
+    border:1px solid var(--line);
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.4);
+  }
+  .floodlight{ position:absolute; top:-10%; width:36%; height:45%; border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,240,0.20), transparent 70%); filter:blur(2px); z-index:0; }
+  .floodlight.l{ left:-8%; } .floodlight.r{ right:-8%; }
+  .crowd{ position:absolute; left:0; right:0; top:0; height:12%;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.10) 0 3px, rgba(0,0,0,0.12) 3px 7px),
+      linear-gradient(180deg, #142b38, #0d2029);
+    opacity:0.8; }
+  .crowd::after{ content:''; position:absolute; inset:0; background:linear-gradient(180deg, transparent 40%, #0a2c3f 100%); }
+  .adboard{ position:absolute; left:0; right:0; top:12%; height:5%;
+    background: repeating-linear-gradient(90deg, #123b6b 0 9%, #0d2c50 9% 9.4%, #123b6b 9.4% 9.5%, #7a1620 9.5% 9.9%, #123b6b 9.9% 10%);
+    box-shadow:0 1px 4px rgba(0,0,0,0.4); }
+  .pitch{ position:absolute; left:0; right:0; top:22%; bottom:0; overflow:hidden;
+    background: repeating-linear-gradient(180deg, #1d5c3a 0 9%, #17492e 9% 18%); }
+  .pitch::before{ content:''; position:absolute; left:0; right:0; top:0; bottom:0;
+    clip-path: polygon(41% 0%, 59% 0%, 96% 100%, 4% 100%);
+    background: repeating-linear-gradient(90deg, rgba(255,255,255,0.10) 0 2px, transparent 2px 8.2%); }
+  .penalty-arc{ position:absolute; left:50%; top:2%; width:22%; height:7%; margin-left:-11%;
+    border:2px solid rgba(255,255,255,0.35); border-radius:50%; clip-path: inset(50% 0 0 0); }
 
-  .power-row{display:flex; gap:8px;}
-  .power-btn{flex:1; padding:12px 4px; border-radius:12px; border:1px solid var(--line);
-    background:rgba(0,0,0,0.2); color:var(--chalk); font-family:'Bebas Neue'; font-size:15px;
-    display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer;}
-  .power-btn .bars{display:flex; gap:2px;}
-  .power-btn .bar{width:6px; height:10px; background:rgba(245,243,236,0.25); border-radius:2px;}
-  .power-btn.selected{background:rgba(216,243,77,0.25); border-color:var(--lime); color:var(--lime);}
-  .power-btn.selected .bar.on{background:var(--lime);}
+  .goal-face{
+    position:absolute; left:32%; right:32%; top:15%; height:19%;
+    clip-path: polygon(8% 0%, 92% 0%, 100% 100%, 0% 100%);
+    background:
+      repeating-linear-gradient(90deg, transparent 0 32%, rgba(255,255,255,0.22) 32% 32.8%, transparent 32.8% 66%, rgba(255,255,255,0.22) 66% 66.8%, transparent 66.8% 100%),
+      repeating-linear-gradient(100deg, var(--net) 0 1.5px, transparent 1.5px 9px),
+      repeating-linear-gradient(8deg, var(--net) 0 1.5px, transparent 1.5px 9px),
+      linear-gradient(180deg, rgba(245,243,236,0.06), rgba(245,243,236,0.01));
+  }
+  .goal-post{ position:absolute; background:linear-gradient(90deg, #d8d6cf, #fff 45%, #b9b7ae); z-index:2;
+    box-shadow:0 1px 3px rgba(0,0,0,0.5); border-radius:1px; }
+  .goal-post.top{ left:32%; right:32%; top:15%; height:3px; clip-path:polygon(8% 0,92% 0,100% 100%,0% 100%); }
+  .goal-post.left{ left:calc(32% - 1px); top:15%; width:3px; height:19%; }
+  .goal-post.right{ right:calc(32% - 1px); top:15%; width:3px; height:19%; }
+
+  .ground-shadow{ position:absolute; width:52px; height:14px; border-radius:50%;
+    background:radial-gradient(ellipse, rgba(0,0,0,0.45), transparent 70%); z-index:3;
+    transform:translate(-50%,-4px); transition:left .18s ease, top .18s ease; }
+
+  /* Figuras (arquero / pateador) construidas con formas, sin emojis */
+  .figure{ position:absolute; z-index:5; width:34px; height:52px; margin:-46px 0 0 -17px;
+    transition:left .18s ease, top .18s ease, transform .18s ease; }
+  .figure .f-head{ position:absolute; top:0; left:50%; width:14px; height:14px; margin-left:-7px;
+    border-radius:50%; background:#e9b98a; box-shadow:inset -2px -2px 0 rgba(0,0,0,0.15); }
+  .figure .f-torso{ position:absolute; top:12px; left:50%; width:18px; height:22px; margin-left:-9px;
+    border-radius:6px 6px 4px 4px; }
+  .figure .f-arm{ position:absolute; top:14px; width:7px; height:20px; border-radius:4px; }
+  .figure .f-arm.l{ left:2px; transform-origin:top center; }
+  .figure .f-arm.r{ right:2px; transform-origin:top center; }
+  .figure .f-glove{ position:absolute; bottom:-3px; left:-1px; width:8px; height:8px; border-radius:50%; background:#F5D547;
+    box-shadow:0 0 0 2px rgba(0,0,0,0.15) inset; }
+  .figure .f-leg{ position:absolute; bottom:0; width:7px; height:18px; border-radius:3px; background:#22242b; }
+  .figure .f-leg.l{ left:8px; } .figure .f-leg.r{ right:8px; }
+
+  .figure.keeper{ transform-origin:center bottom; }
+  .figure.keeper .f-torso{ background:linear-gradient(180deg,#2ec4b6,#1b7a70); }
+  .figure.keeper .f-arm{ background:#2ec4b6; }
+  .figure.keeper .f-leg{ background:#12312d; }
+
+  /* Pateador visto de espaldas, grande y recortado en primer plano (estilo cámara FIFA) */
+  .kicker-back{ position:absolute; left:50%; bottom:-9%; transform:translateX(-50%); z-index:5;
+    display:flex; flex-direction:column; align-items:center; }
+  .kb-jersey{ position:relative; width:88px; height:70px; border-radius:20px 20px 8px 8px;
+    background:linear-gradient(180deg,#e63946,#a8192a);
+    display:flex; align-items:flex-start; justify-content:center; padding-top:8px;
+    box-shadow:0 10px 16px rgba(0,0,0,0.4), inset 0 -10px 14px rgba(0,0,0,0.15); z-index:2; }
+  .kb-jersey::before{ content:''; position:absolute; top:0; left:50%; width:22px; height:10px; margin-left:-11px;
+    background:#a8192a; border-radius:0 0 10px 10px; }
+  .kb-number{ color:#fff; font-family:'Bebas Neue'; font-size:28px; text-shadow:0 2px 3px rgba(0,0,0,0.4); }
+  .kb-shorts{ width:78px; height:26px; background:#161616; margin-top:-6px; border-radius:0 0 6px 6px; z-index:1;
+    box-shadow:inset 0 4px 6px rgba(0,0,0,0.3); }
+  .kb-legs{ display:flex; gap:20px; margin-top:-2px; }
+  .kb-leg{ width:17px; height:64px; background:#dfa877; border-radius:0 0 6px 6px; }
+  .kb-sock{ position:absolute; bottom:0; left:0; right:0; height:18px; background:#e63946; border-radius:0 0 6px 6px; }
+  .kb-leg{ position:relative; }
+
+  /* Carteles de nombre estilo HUD, abajo de la escena */
+  .hud-plate{ position:absolute; bottom:5%; z-index:6; background:rgba(8,18,14,0.8); color:var(--chalk);
+    font-family:'Bebas Neue'; font-size:13px; letter-spacing:1px; padding:4px 12px 4px 10px;
+    display:flex; align-items:center; gap:6px; max-width:46%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hud-plate.left{ left:0; clip-path:polygon(0 0, 100% 0, 88% 100%, 0 100%); }
+  .hud-plate.right{ right:0; clip-path:polygon(12% 0, 100% 0, 100% 100%, 0 100%); }
+  .hud-dot{ width:7px; height:7px; border-radius:50%; background:var(--lime); flex-shrink:0; }
+  .hud-dot.gk{ background:#7CE7FF; }
+
+  .ball-sprite{ position:absolute; width:20px; height:20px; left:50%; bottom:10%;
+    transform:translate(-50%,50%) scale(1); z-index:8;
+    border-radius:50%;
+    background:
+      radial-gradient(circle at 30% 28%, rgba(255,255,255,0.95), rgba(255,255,255,0) 35%),
+      conic-gradient(from 0deg, #1c1c1c 0 12%, #f5f3ec 0 22%, #1c1c1c 0 32%, #f5f3ec 0 42%, #1c1c1c 0 52%, #f5f3ec 0 62%, #1c1c1c 0 72%, #f5f3ec 0 82%, #1c1c1c 0 92%, #f5f3ec 0 100%);
+    box-shadow:0 2px 3px rgba(0,0,0,0.5), inset 0 -3px 4px rgba(0,0,0,0.25);
+    transition: left .55s cubic-bezier(.2,.8,.3,1), top .55s cubic-bezier(.2,.8,.3,1), transform .55s ease; }
+
+  .drag-surface{ position:absolute; inset:0; z-index:9; cursor:crosshair; }
+  .reticle{ position:absolute; width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50%;
+    border:3px solid var(--lime); box-shadow:0 0 10px rgba(216,243,77,0.7); z-index:10; pointer-events:none;
+    display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--lime); font-weight:800;
+    background:rgba(216,243,77,0.12); }
+  .reticle.gk{ border-color:#7CE7FF; box-shadow:0 0 10px rgba(124,231,255,0.7); background:rgba(124,231,255,0.12); color:#7CE7FF;}
+
+  .fx-flash{ position:absolute; inset:0; background:radial-gradient(circle, rgba(216,243,77,0.35), transparent 65%);
+    z-index:11; opacity:0; pointer-events:none; }
+  .fx-flash.show{ animation: flashPop .7s ease; }
+  @keyframes flashPop{ 0%{opacity:0;} 25%{opacity:1;} 100%{opacity:0;} }
+
+  .countdown-wrap{ display:flex; align-items:center; justify-content:center; gap:10px; }
+  .countdown-ring{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-family:'Bebas Neue'; font-size:20px; color:var(--lime); position:relative; }
+  .countdown-ring svg{ position:absolute; inset:0; transform:rotate(-90deg); }
+  .countdown-label{ font-size:12px; opacity:0.75; }
+
+  .power-wrap{ display:flex; align-items:center; gap:12px; }
+  .power-wrap label{ font-size:11px; letter-spacing:2px; text-transform:uppercase; opacity:0.7; white-space:nowrap; }
+  .power-wrap input[type=range]{ flex:1; -webkit-appearance:none; height:10px; border-radius:6px;
+    background: linear-gradient(90deg, #7CE7FF 0%, var(--lime) 50%, var(--red) 100%); outline:none; }
+  .power-wrap input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:24px; height:24px; border-radius:50%;
+    background:var(--chalk); border:3px solid var(--pitch-dark); cursor:pointer; }
+  .power-tag{ font-family:'Bebas Neue'; font-size:16px; min-width:56px; text-align:right; }
 
   .wait-screen{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-    gap:14px; flex:1; padding:20px 0;}
-  .wait-screen .big-emoji{font-size:56px; animation:pulse 1.4s infinite;}
+    gap:12px; flex:1; padding:14px 0;}
+  .wait-screen .big-emoji{font-size:48px; animation:pulse 1.4s infinite;}
   @keyframes pulse{0%,100%{transform:scale(1); opacity:.85;} 50%{transform:scale(1.08); opacity:1;}}
 
   .result-banner{text-align:center; padding:10px 0;}
@@ -112,21 +215,20 @@
   .footer-note{text-align:center; font-size:11px; opacity:0.5; margin-top:auto; padding-top:10px;}
   .error-text{color:var(--red); font-size:12.5px; text-align:center; min-height:16px;}
   a.back-link{color:var(--dim); font-size:11px; opacity:0.6; text-align:center; text-decoration:none; display:block;}
+  .locked-note{ text-align:center; font-size:11px; color:var(--lime); opacity:0.85; }
 </style>
 </head>
 <body>
 <div id="app">
 
-  <!-- ENTRY: create or join -->
+  <!-- ENTRY -->
   <div id="screen-entry" class="screen active">
     <h1>🥅 DEATH<br>PENALTIES</h1>
-    <div class="subtitle">Penales online — de 2 a 6 jugadores</div>
-
+    <div class="subtitle">Penales online, tipo FIFA — 2 a 6 jugadores</div>
     <div class="card field">
       <label>Tu nombre</label>
       <input id="nameInput" placeholder="Ej: Ariel" maxlength="16" style="text-transform:none; letter-spacing:normal;">
     </div>
-
     <button class="big" id="btnCreate">CREAR SALA</button>
     <div class="or-sep">— o —</div>
     <div class="card field">
@@ -152,7 +254,7 @@
     <div class="wait-screen" id="lobbyWaiting" style="display:none; padding:6px 0;">
       <div style="font-size:13px; opacity:0.75;">Esperando a que el host arranque el partido…</div>
     </div>
-    <div class="footer-note">Se necesitan al menos 2 jugadores. Cada uno patea 5 penales y todos atajan por turno.</div>
+    <div class="footer-note">Se necesitan al menos 2 jugadores. Pateador y arquero deciden al mismo tiempo, hasta el último segundo.</div>
   </div>
 
   <!-- GAME -->
@@ -161,9 +263,7 @@
       <span id="roundLabel" class="round-pill">RONDA 1/5</span>
       <span id="matchLabel" style="opacity:0.7;"></span>
     </div>
-
     <div id="gameBody"></div>
-
     <div class="card" id="miniScoreboard" style="margin-top:4px;"></div>
   </div>
 
@@ -186,460 +286,27 @@
 </div>
 
 <script>
-const firebaseConfig = {
-  apiKey: "AIzaSyDtvsFr21pxMtExnPpm6aENrlfTToOwkwI",
-  authDomain: "familyconnect-b1c23.firebaseapp.com",
-  databaseURL: "https://familyconnect-b1c23-default-rtdb.firebaseio.com",
-  projectId: "familyconnect-b1c23",
-  storageBucket: "familyconnect-b1c23.firebasestorage.app",
-  messagingSenderId: "276648858270",
-  appId: "1:276648858270:web:0fa32e169652fa8499e18f"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-const ZONE_POS = [
-  {left:16, top:22}, {left:50, top:22}, {left:84, top:22},
-  {left:16, top:74}, {left:50, top:74}, {left:84, top:74}
-];
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-
-const el = id => document.getElementById(id);
-function showScreen(id){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  el(id).classList.add('active');
-}
-
-let roomCode = null;
-let pid = null;
-let room = null;
-let lastAutoAdvanceFor = null; // dedup key: `${phase}-${matchIndex}`
-let localPick = null; // {kickZone, power} staged before kickerDone true, and {zone} for gk
-
-// ---------- helpers ----------
-function randCode(){
-  let s = '';
-  for(let i=0;i<4;i++) s += CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)];
-  return s;
-}
-function randId(){
-  return 'p_' + Math.random().toString(36).slice(2,10);
-}
-function buildMainMatches(order){
-  const matches = [];
-  const n = order.length;
-  for(let r=0;r<5;r++){
-    for(let i=0;i<n;i++){
-      matches.push({kicker: order[i], gk: order[(i+1)%n]});
+  // Bootstrap: si algo revienta ANTES de que carguen los módulos (incluso un error
+  // de sintaxis en algún .js), esto lo manda igual a Firebase por REST puro, sin SDK.
+  (function(){
+    var DB_URL = 'https://familyconnect-b1c23-default-rtdb.firebaseio.com';
+    function rawLog(context, message, extra){
+      try{
+        fetch(DB_URL + '/penales/logs.json', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ ts: Date.now(), context: context, message: String(message), extra: extra || null })
+        }).catch(function(){});
+      } catch(e){ /* no hay nada más que hacer */ }
     }
-  }
-  return matches;
-}
-function buildSuddenMatches(tied){
-  const n = tied.length;
-  return tied.map((id,i)=>({kicker:id, gk:tied[(i+1)%n]}));
-}
-function resolveOutcome(same, power){
-  if(same){
-    const saveChance = power==='suave' ? 0.88 : power==='medio' ? 0.65 : 0.4;
-    return Math.random() < saveChance ? 'atajada' : 'gol';
-  } else {
-    if(power==='fuerte' && Math.random() < 0.12) return 'afuera';
-    return 'gol';
-  }
-}
-function nameOf(id){
-  return (room && room.players && room.players[id] && room.players[id].name) || '???';
-}
-
-// ---------- ENTRY ----------
-const savedName = sessionStorage.getItem('arcadeNajlis_playerName');
-if(savedName) el('nameInput').value = savedName;
-
-el('btnCreate').onclick = async () => {
-  const name = el('nameInput').value.trim();
-  if(!name){ el('entryError').textContent = 'Poné tu nombre primero.'; return; }
-  sessionStorage.setItem('arcadeNajlis_playerName', name);
-  el('btnCreate').disabled = true;
-  try{
-    let code, exists = true, tries = 0;
-    do{
-      code = randCode();
-      const snap = await db.ref('penales/salas/'+code).get();
-      exists = snap.exists();
-      tries++;
-    } while(exists && tries < 8);
-
-    pid = randId();
-    roomCode = code;
-    await db.ref('penales/salas/'+code).set({
-      status:'lobby',
-      hostId: pid,
-      createdAt: firebase.database.ServerValue.TIMESTAMP,
-      players: { [pid]: {name, order:0} }
+    window.addEventListener('error', function(e){
+      rawLog('bootstrap.error', (e.error && e.error.message) || e.message, { filename: e.filename, lineno: e.lineno });
     });
-    attachRoomListener();
-  } catch(e){
-    el('entryError').textContent = 'No se pudo crear la sala. Probá de nuevo.';
-    el('btnCreate').disabled = false;
-  }
-};
-
-el('btnJoin').onclick = async () => {
-  const name = el('nameInput').value.trim();
-  const code = el('codeInput').value.trim().toUpperCase();
-  el('entryError').textContent = '';
-  if(!name){ el('entryError').textContent = 'Poné tu nombre primero.'; return; }
-  if(code.length !== 4){ el('entryError').textContent = 'El código tiene 4 letras.'; return; }
-  sessionStorage.setItem('arcadeNajlis_playerName', name);
-  el('btnJoin').disabled = true;
-  try{
-    const snap = await db.ref('penales/salas/'+code).get();
-    if(!snap.exists()){ el('entryError').textContent = 'No existe esa sala.'; el('btnJoin').disabled=false; return; }
-    const data = snap.val();
-    if(data.status !== 'lobby'){ el('entryError').textContent = 'Esa partida ya arrancó.'; el('btnJoin').disabled=false; return; }
-    const currentPlayers = data.players || {};
-    const count = Object.keys(currentPlayers).length;
-    if(count >= 6){ el('entryError').textContent = 'La sala ya está llena (6/6).'; el('btnJoin').disabled=false; return; }
-    pid = randId();
-    roomCode = code;
-    await db.ref(`penales/salas/${code}/players/${pid}`).set({name, order: count});
-    attachRoomListener();
-  } catch(e){
-    el('entryError').textContent = 'Error al unirse. Probá de nuevo.';
-    el('btnJoin').disabled = false;
-  }
-};
-
-function attachRoomListener(){
-  db.ref('penales/salas/'+roomCode).on('value', snap => {
-    room = snap.val();
-    if(!room) return;
-    render();
-  });
-}
-
-// ---------- RENDER DISPATCH ----------
-function render(){
-  if(room.status === 'lobby') renderLobby();
-  else if(room.status === 'playing') renderGame();
-  else if(room.status === 'ended') renderFinal();
-}
-
-// ---------- LOBBY ----------
-function renderLobby(){
-  showScreen('screen-lobby');
-  el('lobbyCode').textContent = roomCode;
-  const players = room.players || {};
-  const ids = Object.keys(players).sort((a,b)=>players[a].order - players[b].order);
-  el('lobbyCount').textContent = ids.length;
-  el('lobbyList').innerHTML = ids.map(id => `
-    <div class="lobby-row">
-      <div class="lobby-dot"></div>
-      <span>${players[id].name}${id===room.hostId ? ' (host)':''}</span>
-      ${id===pid ? '<span class="me-tag">VOS</span>':''}
-    </div>`).join('');
-
-  const isHost = pid === room.hostId;
-  el('btnStartGame').style.display = (isHost && ids.length >= 2) ? 'block' : 'none';
-  el('lobbyWaiting').style.display = (!isHost) ? 'flex' : 'none';
-
-  el('btnStartGame').onclick = () => {
-    const order = ids;
-    const matches = buildMainMatches(order);
-    const goals = {}; order.forEach(id=>goals[id]=0);
-    db.ref('penales/salas/'+roomCode).update({
-      status:'playing',
-      game: { phase:'main', order, matches, matchIndex:0, goals, pick:null, reveal:null,
-              suddenTied:null, suddenGoals:null, winnerId:null }
+    window.addEventListener('unhandledrejection', function(e){
+      rawLog('bootstrap.unhandledrejection', (e.reason && e.reason.message) || e.reason);
     });
-  };
-}
-
-// ---------- GAME ----------
-function renderGame(){
-  showScreen('screen-game');
-  const game = room.game;
-  const n = game.order.length;
-  const m = game.matches[game.matchIndex];
-
-  if(game.phase === 'main'){
-    const roundNum = Math.floor(game.matchIndex / n) + 1;
-    el('roundLabel').textContent = `RONDA ${roundNum}/5`;
-    el('matchLabel').textContent = `Tiro ${(game.matchIndex % n)+1}/${n}`;
-  } else {
-    el('roundLabel').textContent = 'DESEMPATE';
-    el('matchLabel').textContent = '';
-  }
-
-  renderMiniScoreboard();
-
-  const body = el('gameBody');
-
-  if(game.reveal && game.reveal.matchIndex === game.matchIndex){
-    renderResult(body, game.reveal, m);
-    scheduleAutoAdvance(game);
-    return;
-  }
-
-  const pick = game.pick || {};
-  const iAmKicker = m.kicker === pid;
-  const iAmGk = m.gk === pid;
-
-  if(!pick.kickerDone){
-    if(iAmKicker){
-      renderKickerUI(body, m);
-    } else {
-      renderWait(body, '⏳', `${nameOf(m.kicker)} está por patear`, `${nameOf(m.gk)} ataja`);
-    }
-  } else {
-    if(iAmGk){
-      renderGkUI(body, m);
-    } else {
-      renderWait(body, '🧤', `${nameOf(m.gk)} se está por tirar`, `Penal de ${nameOf(m.kicker)}`);
-    }
-  }
-}
-
-function renderWait(body, emoji, title, sub){
-  body.innerHTML = `
-    <div class="wait-screen">
-      <div class="big-emoji">${emoji}</div>
-      <div>
-        <div class="name" style="font-family:'Bebas Neue'; font-size:26px; color:var(--lime);">${title}</div>
-        <div style="font-size:12.5px; opacity:0.7; margin-top:4px;">${sub}</div>
-      </div>
-    </div>`;
-}
-
-function renderKickerUI(body, m){
-  body.innerHTML = `
-    <div class="turn-banner">
-      <div class="role">PATEÁS VOS</div>
-      <div class="name">${nameOf(m.kicker)}</div>
-      <div class="vs">vs ${nameOf(m.gk)} (arquero)</div>
-    </div>
-    <div class="goal-wrap">
-      <div class="zone-grid" id="zoneGrid">
-        ${['↖','↑','↗','↙','↓','↘'].map((ic,i)=>`<div class="zone" data-zone="${i}"><span class="icon">${ic}</span></div>`).join('')}
-      </div>
-    </div>
-    <div class="card" style="margin-top:12px;">
-      <h3 style="margin-bottom:10px; font-size:15px; text-align:center;">Potencia del tiro</h3>
-      <div class="power-row" id="powerRow">
-        <div class="power-btn" data-power="suave"><div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>SUAVE</div>
-        <div class="power-btn" data-power="medio"><div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>MEDIA</div>
-        <div class="power-btn" data-power="fuerte"><div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>FUERTE</div>
-      </div>
-    </div>
-    <button class="big" id="btnConfirmKick" style="margin-top:12px;" disabled>CONFIRMAR TIRO</button>
-  `;
-  localPick = { kickZone:null, power:null };
-  const grid = el('zoneGrid');
-  grid.addEventListener('click', e=>{
-    const z = e.target.closest('.zone'); if(!z) return;
-    localPick.kickZone = parseInt(z.dataset.zone);
-    grid.querySelectorAll('.zone').forEach(x=>x.classList.remove('selected'));
-    z.classList.add('selected');
-    checkKickReady();
-  });
-  const prow = el('powerRow');
-  prow.addEventListener('click', e=>{
-    const b = e.target.closest('.power-btn'); if(!b) return;
-    localPick.power = b.dataset.power;
-    prow.querySelectorAll('.power-btn').forEach(x=>x.classList.remove('selected'));
-    b.classList.add('selected');
-    checkKickReady();
-  });
-  function checkKickReady(){
-    el('btnConfirmKick').disabled = !(localPick.kickZone!==null && localPick.power!==null);
-  }
-  el('btnConfirmKick').onclick = () => {
-    el('btnConfirmKick').disabled = true;
-    db.ref(`penales/salas/${roomCode}/game/pick`).set({
-      kickZone: localPick.kickZone, power: localPick.power, kickerDone:true
-    });
-  };
-}
-
-function renderGkUI(body, m){
-  body.innerHTML = `
-    <div class="turn-banner">
-      <div class="role">ATAJÁS VOS</div>
-      <div class="name">${nameOf(m.gk)}</div>
-      <div class="vs">Penal de ${nameOf(m.kicker)}</div>
-    </div>
-    <div class="goal-wrap">
-      <div class="zone-grid" id="zoneGridGk">
-        ${['↖','↑','↗','↙','↓','↘'].map((ic,i)=>`<div class="zone" data-zone="${i}"><span class="icon">${ic}</span></div>`).join('')}
-      </div>
-    </div>
-    <button class="big" id="btnConfirmGk" style="margin-top:12px;" disabled>CONFIRMAR ATAJADA</button>
-  `;
-  let chosen = null;
-  const grid = el('zoneGridGk');
-  grid.addEventListener('click', e=>{
-    const z = e.target.closest('.zone'); if(!z) return;
-    chosen = parseInt(z.dataset.zone);
-    grid.querySelectorAll('.zone').forEach(x=>x.classList.remove('selected'));
-    z.classList.add('selected');
-    el('btnConfirmGk').disabled = false;
-  });
-  el('btnConfirmGk').onclick = () => {
-    el('btnConfirmGk').disabled = true;
-    const game = room.game;
-    const pick = game.pick;
-    const same = pick.kickZone === chosen;
-    const outcome = resolveOutcome(same, pick.power);
-    const goalScored = outcome === 'gol';
-    const updates = {};
-    updates[`game/pick/gkZone`] = chosen;
-    updates[`game/pick/gkDone`] = true;
-    updates[`game/reveal`] = {
-      outcome, kickZone: pick.kickZone, gkZone: chosen,
-      kicker: m.kicker, gk: m.gk, matchIndex: game.matchIndex
-    };
-    if(goalScored){
-      if(game.phase === 'main'){
-        const cur = (game.goals && game.goals[m.kicker]) || 0;
-        updates[`game/goals/${m.kicker}`] = cur + 1;
-      } else {
-        const cur = (game.suddenGoals && game.suddenGoals[m.kicker]) || 0;
-        updates[`game/suddenGoals/${m.kicker}`] = cur + 1;
-      }
-    }
-    db.ref(`penales/salas/${roomCode}`).update(updates);
-  };
-}
-
-function renderResult(body, reveal, m){
-  const ballPos = ZONE_POS[reveal.kickZone];
-  const keeperPos = ZONE_POS[reveal.gkZone];
-  body.innerHTML = `
-    <div class="goal-wrap">
-      <div class="zone-grid">
-        <div class="zone"></div><div class="zone"></div><div class="zone"></div>
-        <div class="zone"></div><div class="zone"></div><div class="zone"></div>
-      </div>
-      <div class="ball-sprite" id="ballSprite">⚽</div>
-      <div class="keeper-sprite" id="keeperSprite">🧤</div>
-    </div>
-    <div class="result-banner">
-      <div class="word ${reveal.outcome}" id="resultWord"></div>
-      <div id="resultSub" style="font-size:13px; opacity:0.7;"></div>
-    </div>
-  `;
-  const ball = el('ballSprite'), keeper = el('keeperSprite');
-  requestAnimationFrame(()=>{
-    setTimeout(()=>{
-      ball.style.bottom = 'auto'; ball.style.top = ballPos.top+'%'; ball.style.left = ballPos.left+'%';
-      ball.style.transform = 'translate(-50%,-50%)';
-      keeper.style.left = keeperPos.left+'%'; keeper.style.top = keeperPos.top+'%';
-    }, 60);
-    setTimeout(()=>{
-      if(reveal.outcome==='gol'){ el('resultWord').textContent='¡GOOOOL!'; el('resultSub').textContent = nameOf(reveal.kicker)+' anota'; }
-      else if(reveal.outcome==='atajada'){ el('resultWord').textContent='¡ATAJADA!'; el('resultSub').textContent = nameOf(reveal.gk)+' la saca'; }
-      else { el('resultWord').textContent='¡AFUERA!'; el('resultSub').textContent = 'Se fue muy fuerte, pegó afuera'; }
-    }, 600);
-  });
-}
-
-function scheduleAutoAdvance(game){
-  const key = game.phase + '-' + game.matchIndex;
-  if(lastAutoAdvanceFor === key) return;
-  lastAutoAdvanceFor = key;
-  setTimeout(()=> advanceMatch(game.matchIndex), 2600);
-}
-
-function advanceMatch(expectedIndex){
-  db.ref(`penales/salas/${roomCode}/game`).transaction(game => {
-    if(!game) return game;
-    if(game.matchIndex !== expectedIndex) return; // ya avanzó otro cliente, no tocar
-    const nextIndex = game.matchIndex + 1;
-    if(nextIndex < game.matches.length){
-      game.matchIndex = nextIndex;
-      game.pick = null;
-      game.reveal = null;
-      return game;
-    }
-    // se terminó la tanda actual
-    if(game.phase === 'main'){
-      const ids = game.order;
-      const goals = game.goals || {};
-      let max = -1;
-      ids.forEach(id => { max = Math.max(max, goals[id]||0); });
-      const tied = ids.filter(id => (goals[id]||0) === max);
-      if(tied.length === 1){
-        game.winnerId = tied[0];
-      } else {
-        game.phase = 'sudden';
-        game.suddenTied = tied;
-        game.suddenGoals = {}; tied.forEach(id=> game.suddenGoals[id]=0);
-        game.matches = buildSuddenMatches(tied);
-        game.matchIndex = 0;
-      }
-      game.pick = null; game.reveal = null;
-    } else {
-      const ids = game.suddenTied;
-      const sg = game.suddenGoals || {};
-      let max = -1;
-      ids.forEach(id => { max = Math.max(max, sg[id]||0); });
-      const tied = ids.filter(id => (sg[id]||0) === max);
-      if(tied.length === 1){
-        game.winnerId = tied[0];
-      } else {
-        game.suddenTied = tied;
-        game.suddenGoals = {}; tied.forEach(id=> game.suddenGoals[id]=0);
-        game.matches = buildSuddenMatches(tied);
-        game.matchIndex = 0;
-      }
-      game.pick = null; game.reveal = null;
-    }
-    return game;
-  }, (err, committed, snap) => {
-    if(committed && snap && snap.val() && snap.val().winnerId){
-      db.ref(`penales/salas/${roomCode}/status`).set('ended');
-    }
-  });
-}
-
-function renderMiniScoreboard(){
-  const game = room.game;
-  const box = el('miniScoreboard');
-  if(game.phase === 'main'){
-    const goals = game.goals || {};
-    const max = Math.max(...game.order.map(id=>goals[id]||0));
-    box.innerHTML = '<h3 style="font-size:13px; margin-bottom:8px; opacity:0.8;">TABLA</h3>' +
-      game.order.map(id => `<div class="score-row ${(goals[id]||0)===max && max>0 ? 'leader':''} ${id===pid?'me':''}">
-        <span>${nameOf(id)}${id===pid?' (vos)':''}</span><span class="goals">${goals[id]||0}</span></div>`).join('');
-  } else {
-    const sg = game.suddenGoals || {};
-    box.innerHTML = '<h3 style="font-size:13px; margin-bottom:8px; opacity:0.8;">DESEMPATE</h3>' +
-      (game.suddenTied||[]).map(id => `<div class="score-row ${id===pid?'me':''}">
-        <span>${nameOf(id)}${id===pid?' (vos)':''}</span><span class="goals">${sg[id]||0}</span></div>`).join('');
-  }
-}
-
-// ---------- FINAL ----------
-function renderFinal(){
-  showScreen('screen-final');
-  const game = room.game;
-  const goals = game.goals || {};
-  const ids = game.order.slice().sort((a,b)=>(goals[b]||0)-(goals[a]||0));
-  const max = Math.max(...ids.map(id=>goals[id]||0));
-  el('finalScoreboard').innerHTML = ids.map(id => `
-    <div class="score-row ${(goals[id]||0)===max?'leader':''} ${id===pid?'me':''}">
-      <span>${nameOf(id)}${id===pid?' (vos)':''}</span><span class="goals">${goals[id]||0}</span>
-    </div>`).join('');
-  el('winnerName').textContent = nameOf(game.winnerId);
-
-  const isHost = pid === room.hostId;
-  el('btnRematch').style.display = isHost ? 'block' : 'none';
-  el('finalWaiting').style.display = isHost ? 'none' : 'flex';
-  el('btnRematch').onclick = () => {
-    db.ref(`penales/salas/${roomCode}`).update({ status:'lobby', game:null });
-  };
-}
+  })();
 </script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
