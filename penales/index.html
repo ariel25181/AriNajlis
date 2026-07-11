@@ -67,10 +67,11 @@
   .scene{
     position:relative; border-radius:14px; overflow:hidden;
     aspect-ratio: 4/3.4;
-    background: linear-gradient(180deg, #0d3a52 0%, #0a2c3f 22%, #1d5c3a 22%, #1d5c3a 34%, #17492e 34%, #0d2c1c 100%);
+    background: linear-gradient(180deg, #7ec8e3 0%, #dff3f8 40%, #3f9e56 40%, #358a49 100%);
     border:1px solid var(--line);
-    box-shadow: inset 0 0 40px rgba(0,0,0,0.4);
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.25);
   }
+  .scene canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0; }
   .floodlight{ position:absolute; top:-10%; width:36%; height:45%; border-radius:50%;
     background:radial-gradient(circle, rgba(255,255,240,0.20), transparent 70%); filter:blur(2px); z-index:0; }
   .floodlight.l{ left:-8%; } .floodlight.r{ right:-8%; }
@@ -166,11 +167,24 @@
     transition: left .55s cubic-bezier(.2,.8,.3,1), top .55s cubic-bezier(.2,.8,.3,1), transform .55s ease; }
 
   .drag-surface{ position:absolute; inset:0; z-index:9; cursor:crosshair; }
-  .reticle{ position:absolute; width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50%;
-    border:3px solid var(--lime); box-shadow:0 0 10px rgba(216,243,77,0.7); z-index:10; pointer-events:none;
-    display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--lime); font-weight:800;
-    background:rgba(216,243,77,0.12); }
-  .reticle.gk{ border-color:#7CE7FF; box-shadow:0 0 10px rgba(124,231,255,0.7); background:rgba(124,231,255,0.12); color:#7CE7FF;}
+  .reticle{ position:absolute; width:38px; height:38px; margin:-19px 0 0 -19px; border-radius:50%;
+    z-index:10; pointer-events:none;
+    background:
+      radial-gradient(circle, #fff 0 12%, transparent 12.5%),
+      radial-gradient(circle, #F5D547 0 26%, transparent 26.5%),
+      radial-gradient(circle, #E63946 0 40%, transparent 40.5%),
+      radial-gradient(circle, #fff 0 54%, transparent 54.5%),
+      radial-gradient(circle, #E63946 0 68%, transparent 68.5%),
+      radial-gradient(circle, #fff 0 82%, transparent 82.5%),
+      radial-gradient(circle, #E63946 0 100%, transparent 100%);
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+    animation: reticlePulse 1.1s ease-in-out infinite; }
+  @keyframes reticlePulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.06); } }
+  .reticle.gk{ background:
+      radial-gradient(circle, #fff 0 16%, transparent 16.5%),
+      radial-gradient(circle, #0d3a52 0 40%, transparent 40.5%),
+      radial-gradient(circle, #7CE7FF 0 68%, transparent 68.5%),
+      radial-gradient(circle, #fff 0 100%, transparent 100%); }
 
   .fx-flash{ position:absolute; inset:0; background:radial-gradient(circle, rgba(216,243,77,0.35), transparent 65%);
     z-index:11; opacity:0; pointer-events:none; }
