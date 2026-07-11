@@ -74,7 +74,7 @@
     display:block;
   }
   .cab:active{ transform:scale(0.98); }
-  .cab.disabled{ opacity:0.35; pointer-events:none; }
+  .cab.disabled{ opacity:0.4; }
   .cab .glow{ position:absolute; inset:-40% -10% auto auto; width:160px; height:160px; border-radius:50%; filter:blur(40px); opacity:0.35; }
   .cab-pong{ background:linear-gradient(160deg, #12162B, #090B14); }
   .cab-pong .glow{ background:#7CE7FF; }
@@ -130,34 +130,99 @@
   </div>
 
   <div class="footer-note">ARCADE NAJLIS © — hecho en casa</div>
+  <div id="toast" style="display:none; position:fixed; left:16px; right:16px; bottom:20px; background:#1b1830;
+    border:1px solid var(--gold); color:var(--ink); padding:12px 14px; border-radius:12px; font-size:13px;
+    text-align:center; z-index:50; box-shadow:0 6px 20px rgba(0,0,0,0.5);"></div>
 </div>
 
 <script>
-  const input = document.getElementById('nameInput');
-  const cabPong = document.getElementById('cabPong');
-  const cabPenales = document.getElementById('cabPenales');
-  const hint = document.getElementById('hint');
+(function(){
+  const DB_URL = 'https://familyconnect-b1c23-default-rtdb.firebaseio.com';
 
-  const saved = sessionStorage.getItem('arcadeNajlis_playerName');
-  if(saved){ input.value = saved; }
-
-  function sync(){
-    const name = input.value.trim();
-    const ok = name.length > 0;
-    cabPong.classList.toggle('disabled', !ok);
-    cabPenales.classList.toggle('disabled', !ok);
-    hint.textContent = ok ? 'Elegí un juego para arrancar 👇' : 'Escribí tu nombre para desbloquear los juegos';
-    if(ok){ sessionStorage.setItem('arcadeNajlis_playerName', name); }
+  function logError(context, error, extra){
+    try{
+      console.error('[Arcade Najlis] [' + context + ']', error, extra || {});
+      fetch(DB_URL + '/hub/logs.json', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          ts: Date.now(), context,
+          message: (error && error.message) ? error.message : String(error),
+          stack: (error && error.stack) ? String(error.stack).slice(0,1000) : null,
+          extra: extra || null
+        })
+      }).catch(function(){});
+    } catch(_e){ /* si ni el log funciona, no hay nada más para hacer */ }
   }
-  input.addEventListener('input', sync);
-  sync();
 
-  [cabPong, cabPenales].forEach(cab=>{
-    cab.addEventListener('click', (e)=>{
-      if(cab.classList.contains('disabled')){ e.preventDefault(); input.focus(); return; }
-      sessionStorage.setItem('arcadeNajlis_playerName', input.value.trim());
+  window.addEventListener('error', e => logError('window.onerror', e.error || e.message, { filename: e.filename, lineno: e.lineno }));
+  window.addEventListener('unhandledrejection', e => logError('unhandledrejection', e.reason));
+
+  function showToast(msg){
+    try{
+      const t = document.getElementById('toast');
+      if(!t) return;
+      t.textContent = msg;
+      t.style.display = 'block';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(()=>{ t.style.display = 'none'; }, 2800);
+    } catch(e){ logError('showToast', e); }
+  }
+
+  try{
+    const input = document.getElementById('nameInput');
+    const cabPong = document.getElementById('cabPong');
+    const cabPenales = document.getElementById('cabPenales');
+    const hint = document.getElementById('hint');
+
+    if(!input || !cabPong || !cabPenales || !hint){
+      logError('bootstrap', new Error('Faltan elementos esperados en el DOM del hub'));
+    }
+
+    try{
+      const saved = sessionStorage.getItem('arcadeNajlis_playerName');
+      if(saved) input.value = saved;
+    } catch(e){ logError('sessionStorage.read', e); }
+
+    function sync(){
+      try{
+        const name = input.value.trim();
+        const ok = name.length > 0;
+        cabPong.classList.toggle('disabled', !ok);
+        cabPenales.classList.toggle('disabled', !ok);
+        hint.textContent = ok ? 'Elegí un juego para arrancar 👇' : 'Escribí tu nombre para desbloquear los juegos';
+        if(ok){
+          try{ sessionStorage.setItem('arcadeNajlis_playerName', name); }
+          catch(e){ logError('sessionStorage.write', e); }
+        }
+      } catch(e){ logError('sync', e); }
+    }
+    input.addEventListener('input', sync);
+    sync();
+
+    [cabPong, cabPenales].forEach(cab=>{
+      cab.addEventListener('click', (e)=>{
+        try{
+          if(cab.classList.contains('disabled')){
+            e.preventDefault();
+            showToast('✋ Escribí tu nombre primero para poder jugar');
+            input.focus();
+            return;
+          }
+          try{ sessionStorage.setItem('arcadeNajlis_playerName', input.value.trim()); }
+          catch(err){ logError('sessionStorage.write.onclick', err); }
+          // No hacemos preventDefault: dejamos que el navegador siga el link normalmente.
+        } catch(err){
+          logError('cab.click', err, { cabId: cab.id });
+          showToast('Ups, hubo un error. Probá de nuevo o recargá la página.');
+        }
+      });
     });
-  });
+  } catch(e){
+    logError('bootstrap', e);
+    showToast('No se pudo cargar el menú correctamente. Recargá la página.');
+  }
+})();
 </script>
 </body>
 </html>

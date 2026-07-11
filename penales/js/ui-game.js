@@ -1,60 +1,23 @@
-// ui-game.js — pantalla de juego: escena en perspectiva, apuntado libre + potencia,
-// cuenta regresiva simultánea, animación de resultado y tabla en vivo.
+// ui-game.js — pantalla de juego: escena 3D real (Three.js, cámara detrás del pateador),
+// apuntado libre + potencia sobre una capa 2D superpuesta, cuenta regresiva simultánea,
+// animación de resultado en 3D y tabla en vivo.
 import { State, resetTurnLocalState } from './state.js';
 import { el, nameOf, clamp01, showScreen } from './utils.js';
 import { logError, safeCall } from './logger.js';
 import { TURN_DURATION, GRACE } from './matches.js';
 import { submitLocalFinal, fillDefaultsIfMissing, tryResolveTurn, advanceMatch } from './turn.js';
+import { initScene3D, disposeScene3D, setKeeperPreview, resetPose, animateShot, resize as resizeScene3D } from './scene3d.js';
 
-// Coordenadas del "arco" dentro de la escena, en % de la caja .scene
-// (arco chico y lejano, cámara atrás del pateador, como en la referencia de FIFA)
+// Coordenadas del "arco" dentro de la escena, en % de la caja .scene — se usan solo
+// para ubicar la capa 2D de retículas (el mapeo real a 3D lo hace scene3d.js).
 const GOAL_BOX = { x0: 32, x1: 68, y0: 15, y1: 34 };
 
-function sceneBackgroundHTML(){
-  return `
-    <div class="floodlight l"></div>
-    <div class="floodlight r"></div>
-    <div class="crowd"></div>
-    <div class="adboard"></div>
-    <div class="pitch"></div>
-    <div class="penalty-arc"></div>
-    <div class="goal-face"></div>
-    <div class="goal-post top"></div>
-    <div class="goal-post left"></div>
-    <div class="goal-post right"></div>
-  `;
+// El resize del canvas 3D se ajusta solo una vez por carga de página.
+if(!window.__scene3dResizeBound){
+  window.addEventListener('resize', () => safeCall('scene3d.resize.window', () => resizeScene3D()));
+  window.__scene3dResizeBound = true;
 }
 
-// Arquero: figura chica y lejana (arma con divs, sin emojis), se reposiciona desde JS.
-function figureHTML(kind, id){
-  const hasGloves = kind === 'keeper';
-  return `
-    <div class="figure ${kind}" id="${id}">
-      <div class="f-head"></div>
-      <div class="f-torso"></div>
-      <div class="f-arm l">${hasGloves ? '<div class="f-glove"></div>' : ''}</div>
-      <div class="f-arm r">${hasGloves ? '<div class="f-glove"></div>' : ''}</div>
-      <div class="f-leg l"></div>
-      <div class="f-leg r"></div>
-    </div>
-  `;
-}
-
-// Pateador: visto de espaldas, grande, recortado en primer plano (fijo, no se mueve).
-function kickerBackHTML(){
-  return `
-    <div class="kicker-back">
-      <div class="kb-jersey"><span class="kb-number">9</span></div>
-      <div class="kb-shorts"></div>
-      <div class="kb-legs">
-        <div class="kb-leg"><div class="kb-sock"></div></div>
-        <div class="kb-leg"><div class="kb-sock"></div></div>
-      </div>
-    </div>
-  `;
-}
-
-// Carteles de nombre estilo HUD, abajo a cada lado de la escena.
 function hudPlatesHTML(kickerName, gkName){
   return `
     <div class="hud-plate left"><span class="hud-dot"></span>${kickerName}</div>
@@ -133,10 +96,7 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
         <div class="countdown-label">Definiendo…</div>
       </div>
       <div class="scene" id="scene">
-        ${sceneBackgroundHTML()}
-        <div class="ground-shadow" id="keeperShadow"></div>
-        ${figureHTML('keeper', 'keeperSprite')}
-        ${kickerBackHTML()}
+        <canvas id="three-canvas"></canvas>
         ${hudPlatesHTML(nameOf(m.kicker), nameOf(m.gk))}
         <div class="reticle" id="kickReticle" style="display:none;"></div>
         <div class="reticle gk" id="gkReticle" style="display:none;"></div>
@@ -151,7 +111,8 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
       <div class="locked-note" id="lockedNote" style="display:none;">✅ Elección enviada — esperando al resto…</div>
     `;
 
-    positionKeeper(0.5, 0.5);
+    safeCall('initScene3D', () => initScene3D(el('three-canvas'), { kicker: nameOf(m.kicker), gk: nameOf(m.gk) }));
+    safeCall('resetPose', () => resetPose());
     positionKickReticle(0.5, 0.5);
     positionGkReticle(0.5, 0.5);
 
@@ -180,8 +141,14 @@ function wireDragControls(iAmKicker, iAmGk){
 
     function handleMove(clientX, clientY){
       const p = pointToNorm(clientX, clientY);
-      if(iAmKicker){ State.localKick.x = p.x; State.localKick.y = p.y; positionKickReticle(p.x, p.y); }
-      else { State.localGk.x = p.x; State.localGk.y = p.y; positionGkReticle(p.x, p.y); positionKeeper(p.x, p.y); }
+      if(iAmKicker){
+        State.localKick.x = p.x; State.localKick.y = p.y;
+        positionKickReticle(p.x, p.y);
+      } else {
+        State.localGk.x = p.x; State.localGk.y = p.y;
+        positionGkReticle(p.x, p.y);
+        safeCall('setKeeperPreview', () => setKeeperPreview(p.x, p.y));
+      }
     }
 
     surface.addEventListener('pointerdown', e => {
@@ -284,21 +251,6 @@ function toScenePct(x, y){
     top: GOAL_BOX.y0 + y*(GOAL_BOX.y1-GOAL_BOX.y0)
   };
 }
-function positionKeeper(x,y){
-  const p = toScenePct(x,y);
-  const k = el('keeperSprite');
-  if(k){
-    k.style.left = p.left+'%'; k.style.top = p.top+'%';
-    const lean = Math.max(-55, Math.min(55, (x-0.5)*90));
-    const lift = Math.min(9, Math.abs(x-0.5)*22);
-    k.style.transform = `rotate(${lean.toFixed(1)}deg) translateY(-${lift.toFixed(1)}px) scale(0.8)`;
-  }
-  const shadow = el('keeperShadow');
-  if(shadow){
-    shadow.style.left = p.left+'%'; shadow.style.top = GOAL_BOX.y1+'%';
-    shadow.style.transform = 'translate(-50%,-4px) scale(0.7)';
-  }
-}
 function positionKickReticle(x,y){ const p = toScenePct(x,y); const r = el('kickReticle'); if(r){ r.style.left=p.left+'%'; r.style.top=p.top+'%'; } }
 function positionGkReticle(x,y){ const p = toScenePct(x,y); const r = el('gkReticle'); if(r){ r.style.left=p.left+'%'; r.style.top=p.top+'%'; } }
 
@@ -307,12 +259,8 @@ function renderResult(body, reveal, m){
     body.innerHTML = `
       <div class="turn-banner"><div class="vs">${nameOf(reveal.kicker)} patea — ${nameOf(reveal.gk)} ataja</div></div>
       <div class="scene" id="scene">
-        ${sceneBackgroundHTML()}
-        <div class="ground-shadow" id="keeperShadow"></div>
-        ${figureHTML('keeper', 'keeperSprite')}
-        ${kickerBackHTML()}
+        <canvas id="three-canvas"></canvas>
         ${hudPlatesHTML(nameOf(reveal.kicker), nameOf(reveal.gk))}
-        <div class="ball-sprite" id="ballSprite"></div>
         <div class="fx-flash" id="fxFlash"></div>
       </div>
       <div class="result-banner">
@@ -320,35 +268,25 @@ function renderResult(body, reveal, m){
         <div id="resultSub" style="font-size:13px; opacity:0.7;"></div>
       </div>
     `;
-    const kPos = toScenePct(reveal.kick.x, reveal.kick.y);
-    const gPos = toScenePct(reveal.gkPos.x, reveal.gkPos.y);
-    positionKeeper(reveal.gkPos.x, reveal.gkPos.y);
 
-    const ball = el('ballSprite');
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        try{
-          ball.style.left = kPos.left+'%'; ball.style.top = kPos.top+'%'; ball.style.bottom = 'auto';
-          ball.style.transform = 'translate(-50%,-50%) scale(0.55)';
-        } catch(e){ logError('renderResult.ballMove', e); }
-      }, 60);
-      setTimeout(() => {
-        try{
-          if(reveal.outcome === 'gol'){
-            el('resultWord').textContent = '¡GOOOOL!';
-            el('resultSub').textContent = nameOf(reveal.kicker)+' anota';
-            const flash = el('fxFlash'); if(flash) flash.classList.add('show');
-          } else if(reveal.outcome === 'atajada'){
-            el('resultWord').textContent = '¡ATAJADA!';
-            el('resultSub').textContent = nameOf(reveal.gk)+' la saca';
-            ball.style.left = gPos.left+'%'; ball.style.top = gPos.top+'%';
-          } else {
-            el('resultWord').textContent = '¡AFUERA!';
-            el('resultSub').textContent = 'Se fue muy fuerte, pegó afuera';
-          }
-        } catch(e){ logError('renderResult.wordUpdate', e); }
-      }, 620);
-    });
+    safeCall('initScene3D.result', () => initScene3D(el('three-canvas'), { kicker: nameOf(reveal.kicker), gk: nameOf(reveal.gk) }));
+    safeCall('resetPose.result', () => resetPose());
+
+    safeCall('animateShot', () => animateShot(reveal.kick, reveal.gkPos, reveal.outcome, () => {
+      try{
+        if(reveal.outcome === 'gol'){
+          el('resultWord').textContent = '¡GOOOOL!';
+          el('resultSub').textContent = nameOf(reveal.kicker)+' anota';
+          const flash = el('fxFlash'); if(flash) flash.classList.add('show');
+        } else if(reveal.outcome === 'atajada'){
+          el('resultWord').textContent = '¡ATAJADA!';
+          el('resultSub').textContent = nameOf(reveal.gk)+' la saca';
+        } else {
+          el('resultWord').textContent = '¡AFUERA!';
+          el('resultSub').textContent = 'Se fue muy fuerte, pegó afuera';
+        }
+      } catch(e){ logError('renderResult.wordUpdate', e); }
+    }));
   } catch(e){
     logError('renderResult', e, { reveal });
   }
@@ -384,3 +322,5 @@ function renderMiniScoreboard(game){
     logError('renderMiniScoreboard', e);
   }
 }
+
+export { disposeScene3D };
