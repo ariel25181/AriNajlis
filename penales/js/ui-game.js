@@ -91,9 +91,9 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
           <svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" stroke="rgba(255,255,255,0.15)" stroke-width="5" fill="none"/>
             <circle id="ringProgress" cx="23" cy="23" r="19" stroke="var(--lime)" stroke-width="5" fill="none"
               stroke-dasharray="119" stroke-dashoffset="0" stroke-linecap="round"/></svg>
-          <span id="ringNum">3</span>
+          <span id="ringNum">5</span>
         </div>
-        <div class="countdown-label">Definiendo…</div>
+        <div class="countdown-label">Movete libre y apretá el botón cuando estés listo…</div>
       </div>
       <div class="scene" id="scene">
         <canvas id="three-canvas"></canvas>
@@ -108,6 +108,9 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
         <input type="range" id="powerSlider" min="0" max="100" value="50">
         <span class="power-tag" id="powerTag">MEDIA</span>
       </div>
+      <button class="big" id="btnConfirmShot" style="display:none; margin-top:10px;">
+        ${iAmKicker ? '¡PATEAR!' : '¡ATAJAR!'}
+      </button>
       <div class="locked-note" id="lockedNote" style="display:none;">✅ Elección enviada — esperando al resto…</div>
     `;
 
@@ -120,6 +123,10 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
       el(iAmKicker ? 'kickReticle' : 'gkReticle').style.display = 'flex';
       if(iAmKicker) el('powerWrap').style.display = 'flex';
       wireDragControls(iAmKicker, iAmGk);
+
+      const btn = el('btnConfirmShot');
+      btn.style.display = 'block';
+      btn.onclick = () => safeCall('btnConfirmShot.click', () => submitLocalFinalForRole(m, iAmKicker, iAmGk, false));
     }
 
     wireCountdown(m, iAmKicker, iAmGk, turn);
@@ -191,7 +198,8 @@ function wireCountdown(m, iAmKicker, iAmGk, turn){
         const remaining = Math.max(0, duration - (Date.now() - startedAt));
         updateRing(remaining, duration);
         if(remaining <= 0){
-          submitLocalFinalForRole(m, iAmKicker, iAmGk);
+          // Se acabó el tiempo y no apretó el botón: se patea/ataja al medio por default.
+          submitLocalFinalForRole(m, iAmKicker, iAmGk, true);
           return;
         }
         State.countdownTimer = setTimeout(tick, 80);
@@ -209,18 +217,23 @@ function wireCountdown(m, iAmKicker, iAmGk, turn){
   }
 }
 
-function submitLocalFinalForRole(m, iAmKicker, iAmGk){
+function submitLocalFinalForRole(m, iAmKicker, iAmGk, useDefault){
   try{
     if(State.submitted) return;
     State.submitted = true;
     clearTimeout(State.countdownTimer);
     const lockedNote = el('lockedNote'); if(lockedNote) lockedNote.style.display = 'block';
     const dragSurface = el('dragSurface'); if(dragSurface) dragSurface.style.pointerEvents = 'none';
+    const btn = el('btnConfirmShot'); if(btn) btn.style.display = 'none';
 
     if(iAmKicker){
-      submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, power: State.localKick.power });
+      const payload = useDefault
+        ? { x: 0.5, y: 0.5, power: 0.5 }
+        : { x: State.localKick.x, y: State.localKick.y, power: State.localKick.power };
+      submitLocalFinal('kicker', payload);
     } else if(iAmGk){
-      submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y });
+      const payload = useDefault ? { x: 0.5, y: 0.5 } : { x: State.localGk.x, y: State.localGk.y };
+      submitLocalFinal('gk', payload);
     }
   } catch(e){
     logError('submitLocalFinalForRole', e);
