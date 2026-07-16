@@ -212,6 +212,8 @@ function buildHuman({ jersey, shorts, hair, scale, pose }){
     legL.position.set(-0.09, 0.4, 0);
     legR.position.set(0.09, 0.4, 0);
   }
+  addLegKit(legL, jersey);
+  addLegKit(legR, jersey);
 
   const armGeo = new THREE.CapsuleGeometry(0.06, 0.4, 4, 8);
   const armMat = new THREE.MeshStandardMaterial({ color: jersey });
@@ -224,9 +226,44 @@ function buildHuman({ jersey, shorts, hair, scale, pose }){
     armL.position.set(-0.26, 1.2, 0); armL.rotation.z = 0.3;
     armR.position.set(0.26, 1.2, 0); armR.rotation.z = -0.3;
   }
+  addSleeveCuff(armL);
+  addSleeveCuff(armR);
+
+  // Cuello/cuello de camiseta: aro blanco a la altura del cuello
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.018, 8, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffffff }));
+  collar.position.y = 1.42; collar.rotation.x = Math.PI/2;
+  group.add(collar);
 
   group.scale.setScalar(scale);
   return group;
+}
+
+// Medias con banda del color de la camiseta + botines con suela clara, montados como
+// hijos de cada pierna (así heredan la rotación de la pose sin cálculos extra).
+function addLegKit(leg, jerseyColor){
+  const sock = new THREE.Mesh(new THREE.CylinderGeometry(0.086, 0.086, 0.11, 8),
+    new THREE.MeshStandardMaterial({ color: jerseyColor }));
+  sock.position.y = -0.04;
+  leg.add(sock);
+
+  const boot = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.06, 0.17),
+    new THREE.MeshStandardMaterial({ color: 0x141414 }));
+  boot.position.set(0, -0.27, 0.03);
+  leg.add(boot);
+
+  const sole = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.02, 0.17),
+    new THREE.MeshStandardMaterial({ color: 0xf5f3ec }));
+  sole.position.set(0, -0.305, 0.03);
+  leg.add(sole);
+}
+
+// Puño de manga blanco, en la punta de cada brazo.
+function addSleeveCuff(arm){
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.063, 0.063, 0.035, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffffff }));
+  cuff.position.y = 0.17;
+  arm.add(cuff);
 }
 
 // Cartel con el nombre del jugador, montado sobre la camiseta (a la altura de la espalda/pecho).
