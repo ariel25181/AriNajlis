@@ -116,15 +116,16 @@ export function animateShot(kickXY, gkXY, outcome, onDone){
     const keeperTarget = goalToCanvasFrac(gkXY.x, gkXY.y);
     const startBall = { ...ballCanvasPos };
     const startKeeper = { ...keeperCanvasPos };
-    const dur = 550;
+    const dur = 1300; // más lenta que antes (550ms), para que se vea bien la trayectoria
     const t0 = performance.now();
 
     function frame(now){
       const t = Math.min(1, (now - t0) / dur);
-      const ease = 1 - Math.pow(1 - t, 3);
+      const ease = 1 - Math.pow(1 - t, 2.2);
+      const arcBulge = Math.sin(t * Math.PI) * 0.045; // leve curva hacia arriba a mitad de camino
 
       ballCanvasPos.x = startBall.x + (target.x - startBall.x) * ease;
-      ballCanvasPos.y = startBall.y + (target.y - startBall.y) * ease;
+      ballCanvasPos.y = (startBall.y + (target.y - startBall.y) * ease) - arcBulge;
       ballCanvasPos.scale = 1 - 0.42 * ease;
 
       keeperCanvasPos.x = startKeeper.x + (keeperTarget.x - startKeeper.x) * ease;

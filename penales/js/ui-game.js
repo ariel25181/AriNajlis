@@ -7,10 +7,11 @@ import { logError, safeCall } from './logger.js';
 import { TURN_DURATION, GRACE, zoneLabel } from './matches.js';
 import { submitLocalFinal, fillDefaultsIfMissing, tryResolveTurn, advanceMatch } from './turn.js';
 import { initScene3D, disposeScene3D, setKeeperPreview, resetPose, animateShot, setKickerTell, resize as resizeScene3D } from './scene2d.js';
+import { unlockAudio, playTick, playKick, playGoal, playSave, playWide } from './sound.js';
 
 // Coordenadas del "arco" dentro de la escena, en % de la caja .scene — se usan solo
 // para ubicar la capa 2D de retículas (el dibujo del arco lo hace scene2d.js).
-const GOAL_BOX = { x0: 32, x1: 68, y0: 15, y1: 34 };
+const GOAL_BOX = { x0: 15, x1: 85, y0: 10, y1: 55 };
 
 // El resize del canvas 3D se ajusta solo una vez por carga de página.
 if(!window.__scene3dResizeBound){
@@ -138,7 +139,7 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
 
       const btn = el('btnConfirmShot');
       btn.style.display = 'block';
-      btn.onclick = () => safeCall('btnConfirmShot.click', () => submitLocalFinalForRole(m, iAmKicker, iAmGk, false));
+      btn.onclick = () => { safeCall('unlockAudio', () => unlockAudio()); safeCall('btnConfirmShot.click', () => submitLocalFinalForRole(m, iAmKicker, iAmGk, false)); };
     }
 
     wireCountdown(m, iAmKicker, iAmGk, turn);
@@ -172,6 +173,7 @@ function wireDragControls(iAmKicker, iAmGk){
 
     surface.addEventListener('pointerdown', e => {
       try{
+        safeCall('unlockAudio', () => unlockAudio());
         if(State.submitted) return;
         handleMove(e.clientX, e.clientY);
         surface.setPointerCapture(e.pointerId);
@@ -269,11 +271,19 @@ function updateCountdownUI(turn){
 }
 
 function updateRing(remaining, duration){
-  const ringNum = el('ringNum'), ringProg = el('ringProgress');
+  const ringNum = el('ringNum'), ringProg = el('ringProgress'), ring = el('ring');
   if(!ringNum || !ringProg) return;
-  ringNum.textContent = Math.ceil(remaining/1000);
+  const secs = Math.ceil(remaining/1000);
+  if(ringNum.textContent !== String(secs)){
+    ringNum.textContent = secs;
+    ringNum.style.animation = 'none';
+    void ringNum.offsetWidth; // fuerza reflow para poder repetir la animación
+    ringNum.style.animation = '';
+    if(secs > 0) safeCall('playTick', () => playTick());
+  }
   const frac = remaining/duration;
   ringProg.setAttribute('stroke-dashoffset', (119*(1-frac)).toFixed(1));
+  if(ring) ring.classList.toggle('urgent', remaining <= 1500);
 }
 
 function toScenePct(x, y){
@@ -302,6 +312,7 @@ function renderResult(body, reveal, m){
 
     safeCall('initScene3D.result', () => initScene3D(el('three-canvas'), { kicker: nameOf(reveal.kicker), gk: nameOf(reveal.gk) }));
     safeCall('resetPose.result', () => resetPose());
+    safeCall('playKick', () => playKick());
 
     safeCall('animateShot', () => animateShot(reveal.kick, reveal.gkPos, reveal.outcome, () => {
       try{
@@ -309,12 +320,15 @@ function renderResult(body, reveal, m){
           el('resultWord').textContent = '¡GOOOOL!';
           el('resultSub').textContent = nameOf(reveal.kicker)+' anota';
           const flash = el('fxFlash'); if(flash) flash.classList.add('show');
+          safeCall('playGoal', () => playGoal());
         } else if(reveal.outcome === 'atajada'){
           el('resultWord').textContent = '¡ATAJADA!';
           el('resultSub').textContent = nameOf(reveal.gk)+' la saca';
+          safeCall('playSave', () => playSave());
         } else {
           el('resultWord').textContent = '¡AFUERA!';
           el('resultSub').textContent = 'Se fue muy fuerte, pegó afuera';
+          safeCall('playWide', () => playWide());
         }
       } catch(e){ logError('renderResult.wordUpdate', e); }
     }));
@@ -328,7 +342,7 @@ function scheduleAutoAdvance(game){
     const key = game.phase + '-' + game.matchIndex;
     if(State.lastAutoAdvanceFor === key) return;
     State.lastAutoAdvanceFor = key;
-    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), 2600);
+    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), 3400);
   } catch(e){
     logError('scheduleAutoAdvance', e);
   }
