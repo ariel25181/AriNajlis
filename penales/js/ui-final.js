@@ -3,7 +3,7 @@ import { State } from './state.js';
 import { el, nameOf, showScreen } from './utils.js';
 import { logError, safeCall } from './logger.js';
 import { rematch } from './turn.js';
-import { disposeScene3D } from './scene3d.js';
+import { disposeScene3D } from './scene2d.js';
 
 export function renderFinal(){
   try{
