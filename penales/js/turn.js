@@ -4,7 +4,7 @@
 // a la vez, así evitamos condiciones de carrera sin necesitar un solo "dueño" del estado.
 import { db, ServerValue } from './firebase.js';
 import { State } from './state.js';
-import { buildSuddenMatches, resolveOutcome, TURN_DURATION } from './matches.js';
+import { buildSuddenMatches, resolveOutcome, zoneLabel, TURN_DURATION } from './matches.js';
 import { logError } from './logger.js';
 
 function roomRef(){ return db.ref('penales/salas/' + State.roomCode); }
@@ -82,6 +82,13 @@ export function tryResolveTurn(expectedIndex){
           game.suddenGoals[m.kicker] = (game.suddenGoals[m.kicker]||0) + 1;
         }
       }
+
+      // Historial de zonas del pateador (últimos 3 tiros), para mostrarle una pista al arquero.
+      game.history = game.history || {};
+      const hist = game.history[m.kicker] || [];
+      hist.push(zoneLabel(game.turn.kickerFinal.x));
+      game.history[m.kicker] = hist.slice(-3);
+
       return game;
     }, (err) => { if(err) logError('tryResolveTurn.txn', err, { expectedIndex }); });
   } catch(e){
