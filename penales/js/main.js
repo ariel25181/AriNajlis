@@ -8,6 +8,7 @@ import { createRoom, joinRoom, attachRoomListener } from './room.js';
 import { renderLobby } from './ui-lobby.js';
 import { renderGame } from './ui-game.js';
 import { renderFinal } from './ui-final.js';
+import { unlockAudio } from './sound.js';
 
 window.addEventListener('error', e => logError('window.onerror', e.error || e.message, { filename: e.filename, lineno: e.lineno }));
 window.addEventListener('unhandledrejection', e => logError('unhandledrejection', e.reason));
@@ -17,6 +18,7 @@ if(savedName) el('nameInput').value = savedName;
 
 el('btnCreate').onclick = async () => {
   try{
+    try{ unlockAudio(); } catch(_e){ /* no debe frenar el flujo de crear sala */ }
     const name = el('nameInput').value.trim();
     if(!name){ el('entryError').textContent = 'Poné tu nombre primero.'; return; }
     sessionStorage.setItem('arcadeNajlis_playerName', name);
@@ -38,6 +40,7 @@ el('btnCreate').onclick = async () => {
 
 el('btnJoin').onclick = async () => {
   try{
+    try{ unlockAudio(); } catch(_e){ /* no debe frenar el flujo de unirse */ }
     const name = el('nameInput').value.trim();
     const code = el('codeInput').value.trim().toUpperCase();
     el('entryError').textContent = '';
