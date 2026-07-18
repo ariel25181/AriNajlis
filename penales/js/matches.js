@@ -3,7 +3,7 @@
 // no de red — por eso además validamos inputs y logueamos si llegan datos raros.
 import { logError } from './logger.js';
 
-export const TURN_DURATION = 3500; // ms para que pateador y arquero decidan a la vez
+export const TURN_DURATION = 5000; // ms para que pateador y arquero se muevan libremente antes de patear/atajar
 export const GRACE = 1800;         // ms extra antes de aplicar default por inactividad
 export const KEEPER_REACH = 0.34;  // radio normalizado de estirada del arquero
 
@@ -40,6 +40,7 @@ export function buildSuddenMatches(tied){
 }
 
 // kick: {x,y,power} normalizados 0..1 dentro del arco. gk: {x,y} normalizado.
+// y=0 es el travesaño (arriba), y=1 es el piso del arco (abajo).
 export function resolveOutcome(kick, gk){
   try{
     if(!kick || !gk || typeof kick.x !== 'number' || typeof gk.x !== 'number'){
@@ -51,13 +52,26 @@ export function resolveOutcome(kick, gk){
     const nearEdge = kick.x < 0.1 || kick.x > 0.9 || kick.y < 0.08;
 
     if(power > 0.82 && nearEdge && Math.random() < 0.15) return 'afuera';
-    if(dist > KEEPER_REACH) return 'gol';
 
-    const proximity = 1 - (dist / KEEPER_REACH);
+    // Los tiros altos (cerca del travesaño) son más difíciles de atajar en la realidad,
+    // aunque el arquero se tire para el lado correcto: reduce su alcance efectivo ahí.
+    const topness = Math.max(0, 1 - kick.y / 0.4); // 1 = pegado al travesaño, 0 = mitad de abajo o más
+    const effectiveReach = KEEPER_REACH * (1 - 0.28 * topness);
+
+    if(dist > effectiveReach) return 'gol';
+
+    const proximity = 1 - (dist / effectiveReach);
     const saveChance = Math.min(0.93, proximity * (1 - 0.55*power));
     return Math.random() < saveChance ? 'atajada' : 'gol';
   } catch(e){
     logError('resolveOutcome', e, { kick, gk });
     return 'gol'; // default seguro: si algo falla, no le robamos un gol legítimo a nadie
   }
+}
+
+// Clasifica un tiro en una zona legible para mostrar el historial ("izquierda"/"centro"/"derecha").
+export function zoneLabel(x){
+  if(x < 0.35) return 'izquierda';
+  if(x > 0.65) return 'derecha';
+  return 'centro';
 }

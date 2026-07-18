@@ -4,7 +4,7 @@ import { el, showScreen } from './utils.js';
 import { logError, safeCall } from './logger.js';
 import { buildMainMatches } from './matches.js';
 import { startMainGame } from './turn.js';
-import { disposeScene3D } from './scene3d.js';
+import { disposeScene3D } from './scene2d.js';
 
 export function renderLobby(){
   try{
