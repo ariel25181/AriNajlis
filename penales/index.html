@@ -183,10 +183,14 @@
   .fx-flash.show{ animation: flashPop .7s ease; }
   @keyframes flashPop{ 0%{opacity:0;} 25%{opacity:1;} 100%{opacity:0;} }
 
-  .countdown-wrap{ display:flex; align-items:center; justify-content:center; gap:10px; }
-  .countdown-ring{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-family:'Bebas Neue'; font-size:20px; color:var(--lime); position:relative; }
+  .countdown-wrap{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
+  .countdown-ring{ width:78px; height:78px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-family:'Bebas Neue'; font-size:38px; color:var(--lime); position:relative;
+    text-shadow:0 0 12px rgba(216,243,77,0.7); }
   .countdown-ring svg{ position:absolute; inset:0; transform:rotate(-90deg); }
+  .countdown-ring.urgent{ color:var(--red); text-shadow:0 0 14px rgba(230,57,70,0.8); }
+  .countdown-ring #ringNum{ animation: ringPop 0.35s ease; }
+  @keyframes ringPop{ 0%{ transform:scale(1.4); opacity:0.5; } 100%{ transform:scale(1); opacity:1; } }
   .countdown-label{ font-size:12px; opacity:0.75; }
 
   .power-wrap{ display:flex; align-items:center; gap:12px; }
