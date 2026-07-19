@@ -116,7 +116,7 @@ export function animateShot(kickXY, gkXY, outcome, onDone){
     const keeperTarget = goalToCanvasFrac(gkXY.x, gkXY.y);
     const startBall = { ...ballCanvasPos };
     const startKeeper = { ...keeperCanvasPos };
-    const dur = 1300; // más lenta que antes (550ms), para que se vea bien la trayectoria
+    const dur = 1050; // más lenta que la versión original (550ms) pero un poco más ágil que antes (1300ms)
     const t0 = performance.now();
 
     function frame(now){
