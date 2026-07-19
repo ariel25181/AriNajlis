@@ -14,10 +14,11 @@ export function startMainGame(order, matches){
   if(!db) return logError('startMainGame', new Error('db no inicializada'));
   try{
     const goals = {}; order.forEach(id => goals[id] = 0);
+    const gameId = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
     roomRef().update({
       status: 'playing',
       game: {
-        phase: 'main', order, matches, matchIndex: 0, goals,
+        gameId, phase: 'main', order, matches, matchIndex: 0, goals,
         turn: { startedAt: ServerValue.TIMESTAMP, duration: TURN_DURATION, kickerFinal:null, gkFinal:null, resolved:false },
         reveal: null, suddenTied: null, suddenGoals: null, winnerId: null
       }

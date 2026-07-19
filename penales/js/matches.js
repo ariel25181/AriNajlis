@@ -3,9 +3,9 @@
 // no de red — por eso además validamos inputs y logueamos si llegan datos raros.
 import { logError } from './logger.js';
 
-export const TURN_DURATION = 5000; // ms para que pateador y arquero se muevan libremente antes de patear/atajar
+export const TURN_DURATION = 4000; // ms para que pateador y arquero se muevan libremente antes de patear/atajar
 export const GRACE = 1800;         // ms extra antes de aplicar default por inactividad
-export const KEEPER_REACH = 0.34;  // radio normalizado de estirada del arquero
+export const KEEPER_REACH = 0.42;  // radio normalizado de estirada del arquero
 
 export function buildMainMatches(order){
   try{
