@@ -61,7 +61,7 @@ export function renderGame(){
     renderMiniScoreboard(game);
 
     const body = el('gameBody');
-    const matchKey = game.phase + '-' + game.matchIndex;
+    const matchKey = (game.gameId || 'legacy') + '-' + game.phase + '-' + game.matchIndex;
 
     if(game.reveal && game.reveal.matchIndex === game.matchIndex){
       renderResult(body, game.reveal, m);
@@ -330,7 +330,7 @@ function renderResult(body, reveal, m){
 
 function scheduleAutoAdvance(game){
   try{
-    const key = game.phase + '-' + game.matchIndex;
+    const key = (game.gameId || 'legacy') + '-' + game.phase + '-' + game.matchIndex;
     if(State.lastAutoAdvanceFor === key) return;
     State.lastAutoAdvanceFor = key;
     setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), 3400);
