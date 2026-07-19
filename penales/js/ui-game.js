@@ -6,7 +6,7 @@ import { el, nameOf, clamp01, showScreen } from './utils.js';
 import { logError, safeCall } from './logger.js';
 import { TURN_DURATION, GRACE, zoneLabel } from './matches.js';
 import { submitLocalFinal, fillDefaultsIfMissing, tryResolveTurn, advanceMatch } from './turn.js';
-import { initScene3D, disposeScene3D, setKeeperPreview, resetPose, animateShot, setKickerTell, resize as resizeScene3D } from './scene2d.js';
+import { initScene3D, disposeScene3D, resetPose, animateShot, setKickerTell, resize as resizeScene3D } from './scene2d.js';
 import { unlockAudio, playTick, playKick, playGoal, playSave, playWide } from './sound.js';
 
 // Coordenadas del "arco" dentro de la escena, en % de la caja .scene — se usan solo
@@ -106,7 +106,7 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
               stroke-dasharray="119" stroke-dashoffset="0" stroke-linecap="round"/></svg>
           <span id="ringNum">5</span>
         </div>
-        <div class="countdown-label">Movete libre y apretá el botón cuando estés listo…</div>
+        <div class="countdown-label">Mantené el dedo apretado y movelo — donde lo sueltes queda fijado</div>
       </div>
       <div class="scene" id="scene">
         <canvas id="three-canvas"></canvas>
@@ -121,9 +121,6 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
         <input type="range" id="powerSlider" min="0" max="100" value="50">
         <span class="power-tag" id="powerTag">MEDIA</span>
       </div>
-      <button class="big" id="btnConfirmShot" style="display:none; margin-top:10px;">
-        ${iAmKicker ? '¡PATEAR!' : '¡ATAJAR!'}
-      </button>
       <div class="locked-note" id="lockedNote" style="display:none;">✅ Elección enviada — esperando al resto…</div>
     `;
 
@@ -136,10 +133,6 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
       el(iAmKicker ? 'kickReticle' : 'gkReticle').style.display = 'flex';
       if(iAmKicker) el('powerWrap').style.display = 'flex';
       wireDragControls(iAmKicker, iAmGk);
-
-      const btn = el('btnConfirmShot');
-      btn.style.display = 'block';
-      btn.onclick = () => { safeCall('unlockAudio', () => unlockAudio()); safeCall('btnConfirmShot.click', () => submitLocalFinalForRole(m, iAmKicker, iAmGk, false)); };
     }
 
     wireCountdown(m, iAmKicker, iAmGk, turn);
@@ -159,6 +152,8 @@ function wireDragControls(iAmKicker, iAmGk){
       return { x: clamp01((clientX-gx0)/(gx1-gx0)), y: clamp01((clientY-gy0)/(gy1-gy0)) };
     }
 
+    // El arquero NO se mueve en vivo mientras se arrastra — se queda quieto (pose lista)
+    // y recién se tira en la animación del tiro, hacia la posición final elegida.
     function handleMove(clientX, clientY){
       const p = pointToNorm(clientX, clientY);
       if(iAmKicker){
@@ -167,7 +162,6 @@ function wireDragControls(iAmKicker, iAmGk){
       } else {
         State.localGk.x = p.x; State.localGk.y = p.y;
         positionGkReticle(p.x, p.y);
-        safeCall('setKeeperPreview', () => setKeeperPreview(p.x, p.y));
       }
     }
 
@@ -175,17 +169,19 @@ function wireDragControls(iAmKicker, iAmGk){
       try{
         safeCall('unlockAudio', () => unlockAudio());
         if(State.submitted) return;
+        e.preventDefault();
         handleMove(e.clientX, e.clientY);
-        surface.setPointerCapture(e.pointerId);
+        try{ surface.setPointerCapture(e.pointerId); } catch(_capErr){ /* no crítico: la posición ya se fijó arriba */ }
       } catch(err){ logError('dragSurface.pointerdown', err); }
     });
     surface.addEventListener('pointermove', e => {
       try{
         if(State.submitted) return;
         if(e.buttons !== 1 && e.pointerType === 'mouse') return;
+        e.preventDefault();
         handleMove(e.clientX, e.clientY);
       } catch(err){ logError('dragSurface.pointermove', err); }
-    });
+    }, { passive: false });
 
     if(iAmKicker){
       const slider = el('powerSlider');
@@ -218,8 +214,8 @@ function wireCountdown(m, iAmKicker, iAmGk, turn){
           safeCall('setKickerTell', () => setKickerTell(true));
         }
         if(remaining <= 0){
-          // Se acabó el tiempo y no apretó el botón: se patea/ataja al medio por default.
-          submitLocalFinalForRole(m, iAmKicker, iAmGk, true);
+          // Se acabó el tiempo: se patea/ataja hacia donde esté el cross-arrow en ese instante.
+          submitLocalFinalForRole(m, iAmKicker, iAmGk);
           return;
         }
         State.countdownTimer = setTimeout(tick, 80);
@@ -237,23 +233,18 @@ function wireCountdown(m, iAmKicker, iAmGk, turn){
   }
 }
 
-function submitLocalFinalForRole(m, iAmKicker, iAmGk, useDefault){
+function submitLocalFinalForRole(m, iAmKicker, iAmGk){
   try{
     if(State.submitted) return;
     State.submitted = true;
     clearTimeout(State.countdownTimer);
     const lockedNote = el('lockedNote'); if(lockedNote) lockedNote.style.display = 'block';
     const dragSurface = el('dragSurface'); if(dragSurface) dragSurface.style.pointerEvents = 'none';
-    const btn = el('btnConfirmShot'); if(btn) btn.style.display = 'none';
 
     if(iAmKicker){
-      const payload = useDefault
-        ? { x: 0.5, y: 0.5, power: 0.5 }
-        : { x: State.localKick.x, y: State.localKick.y, power: State.localKick.power };
-      submitLocalFinal('kicker', payload);
+      submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, power: State.localKick.power });
     } else if(iAmGk){
-      const payload = useDefault ? { x: 0.5, y: 0.5 } : { x: State.localGk.x, y: State.localGk.y };
-      submitLocalFinal('gk', payload);
+      submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y });
     }
   } catch(e){
     logError('submitLocalFinalForRole', e);
