@@ -1,5 +1,7 @@
 // state.js — estado compartido mutable entre módulos (un solo objeto, sin duplicar).
 export const State = {
+  mode: 'online',        // 'online' (Firebase) | 'ai' (local, sin red)
+  onLocalUpdate: null,    // callback que dispara el re-render cuando el modo es 'ai'
   roomCode: null,
   pid: null,
   room: null,
