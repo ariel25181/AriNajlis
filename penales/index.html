@@ -41,6 +41,9 @@
     font-family:'Bebas Neue'; font-size:22px; letter-spacing:1px; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,0.3); width:100%;}
   button.big:active{transform:translateY(2px); box-shadow:0 2px 0 rgba(0,0,0,0.3);}
   button.big:disabled{opacity:0.35; box-shadow:none;}
+  button.big.ai-btn{ background:linear-gradient(135deg, #6c63ff, #9c5fff); color:#fff;
+    box-shadow:0 4px 0 #4a3fb0; }
+  button.big.ai-btn:active{ box-shadow:0 2px 0 #4a3fb0; }
   button.ghost{background:transparent; color:var(--chalk); border:1px solid var(--line); border-radius:12px;
     padding:12px; font-family:'Bebas Neue'; font-size:16px; letter-spacing:1px; cursor:pointer; width:100%;}
   .or-sep{text-align:center; font-size:11px; opacity:0.5; letter-spacing:2px; margin:2px 0;}
@@ -247,6 +250,8 @@
       <input id="codeInput" placeholder="ABCD" maxlength="4">
     </div>
     <button class="big" id="btnJoin">UNIRME</button>
+    <div class="or-sep">— o —</div>
+    <button class="big ai-btn" id="btnPlayAi">🤖 JUGAR CONTRA LA IA</button>
     <div class="error-text" id="entryError"></div>
     <a class="back-link" href="../index.html">← Volver al arcade</a>
   </div>
