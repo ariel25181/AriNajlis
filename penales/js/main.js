@@ -9,9 +9,15 @@ import { renderLobby } from './ui-lobby.js';
 import { renderGame } from './ui-game.js';
 import { renderFinal } from './ui-final.js';
 import { unlockAudio } from './sound.js';
+import { startAiGame } from './turn.js';
 
 window.addEventListener('error', e => logError('window.onerror', e.error || e.message, { filename: e.filename, lineno: e.lineno }));
 window.addEventListener('unhandledrejection', e => logError('unhandledrejection', e.reason));
+
+// En modo IA no hay Firebase escuchando cambios — este callback cumple el mismo rol
+// que attachRoomListener(dispatchRender), pero llamado a mano cada vez que el estado
+// local cambia (ver turn.js: notifyLocal()).
+State.onLocalUpdate = dispatchRender;
 
 const savedName = sessionStorage.getItem('arcadeNajlis_playerName');
 if(savedName) el('nameInput').value = savedName;
@@ -62,6 +68,21 @@ el('btnJoin').onclick = async () => {
     el('btnJoin').disabled = false;
   }
 };
+
+const btnPlayAi = el('btnPlayAi');
+if(btnPlayAi){
+  btnPlayAi.onclick = () => {
+    try{
+      try{ unlockAudio(); } catch(_e){ /* no debe frenar el flujo */ }
+      const name = el('nameInput').value.trim() || 'Vos';
+      sessionStorage.setItem('arcadeNajlis_playerName', name);
+      startAiGame(name);
+    } catch(e){
+      logError('btnPlayAi.onclick', e);
+      el('entryError').textContent = 'Ocurrió un error inesperado. Probá de nuevo.';
+    }
+  };
+}
 
 function dispatchRender(room){
   try{
