@@ -153,7 +153,7 @@ function tryResolveTurnReducer(game, expectedIndex){
   game.turn.resolved = true;
   game.reveal = {
     outcome, kick: game.turn.kickerFinal, gkPos: game.turn.gkFinal,
-    kicker: m.kicker, gk: m.gk, matchIndex: game.matchIndex
+    kicker: m.kicker, gk: m.gk, matchIndex: game.matchIndex, resolvedAt: Date.now()
   };
   if(goalScored){
     if(game.phase === 'main'){
