@@ -328,15 +328,42 @@ function renderResult(body, reveal, m){
   }
 }
 
+const ADVANCE_DELAY = 3400; // ms que se muestra el resultado antes de pasar al siguiente tiro
+
 function scheduleAutoAdvance(game){
   try{
     const key = (game.gameId || 'legacy') + '-' + (game.roundId||0) + '-' + game.phase + '-' + game.matchIndex;
     if(State.lastAutoAdvanceFor === key) return;
     State.lastAutoAdvanceFor = key;
-    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), 3400);
+    // Usamos el momento real en que se resolvió el tiro (no un timeout ciego): si el
+    // navegador pausó los timers (pantalla bloqueada, pestaña en segundo plano) y esto
+    // se ejecuta tarde, el delay puede terminar siendo 0 (avanza ya mismo) en vez de
+    // quedar esperando de más sobre un reloj que ya venía atrasado.
+    const elapsed = game.reveal && game.reveal.resolvedAt ? (Date.now() - game.reveal.resolvedAt) : 0;
+    const delay = Math.max(0, ADVANCE_DELAY - elapsed);
+    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), delay);
   } catch(e){
     logError('scheduleAutoAdvance', e);
   }
+}
+
+// Red de seguridad: los navegadores (sobre todo en celu) pausan los timers de JS cuando
+// la pantalla se bloquea o se cambia de app — el setTimeout de arriba puede no llegar a
+// disparar nunca. Si eso pasa, reintentamos apenas la pestaña vuelve a estar visible.
+// Llamar a advanceMatch de más no rompe nada: la transacción de Firebase (o el reducer
+// local del modo IA) verifica el índice actual y no hace nada si ya avanzó otro cliente.
+if(!window.__visibilityCatchupBound){
+  document.addEventListener('visibilitychange', () => {
+    try{
+      if(document.visibilityState !== 'visible') return;
+      const game = State.room && State.room.game;
+      if(!game || !game.reveal) return;
+      safeCall('advanceMatch.visibilitycatchup', () => advanceMatch(game.matchIndex));
+    } catch(e){
+      logError('visibilitychange.catchup', e);
+    }
+  });
+  window.__visibilityCatchupBound = true;
 }
 
 function renderMiniScoreboard(game){
