@@ -116,11 +116,6 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
         <div class="fx-flash" id="fxFlash"></div>
         <div class="drag-surface" id="dragSurface"></div>
       </div>
-      <div class="power-wrap" id="powerWrap" style="display:none;">
-        <label>Potencia</label>
-        <input type="range" id="powerSlider" min="0" max="100" value="50">
-        <span class="power-tag" id="powerTag">MEDIA</span>
-      </div>
       <div class="locked-note" id="lockedNote" style="display:none;">✅ Elección enviada — esperando al resto…</div>
     `;
 
@@ -131,7 +126,6 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
 
     if(iAmKicker || iAmGk){
       el(iAmKicker ? 'kickReticle' : 'gkReticle').style.display = 'flex';
-      if(iAmKicker) el('powerWrap').style.display = 'flex';
       wireDragControls(iAmKicker, iAmGk);
     }
 
@@ -182,17 +176,6 @@ function wireDragControls(iAmKicker, iAmGk){
         handleMove(e.clientX, e.clientY);
       } catch(err){ logError('dragSurface.pointermove', err); }
     }, { passive: false });
-
-    if(iAmKicker){
-      const slider = el('powerSlider');
-      slider.addEventListener('input', () => {
-        try{
-          if(State.submitted) return;
-          State.localKick.power = slider.value/100;
-          el('powerTag').textContent = State.localKick.power < 0.34 ? 'SUAVE' : State.localKick.power < 0.67 ? 'MEDIA' : 'FUERTE';
-        } catch(err){ logError('powerSlider.input', err); }
-      });
-    }
   } catch(e){
     logError('wireDragControls', e);
   }
@@ -242,7 +225,7 @@ function submitLocalFinalForRole(m, iAmKicker, iAmGk){
     const dragSurface = el('dragSurface'); if(dragSurface) dragSurface.style.pointerEvents = 'none';
 
     if(iAmKicker){
-      submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, power: State.localKick.power });
+      submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y });
     } else if(iAmGk){
       submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y });
     }
@@ -328,15 +311,42 @@ function renderResult(body, reveal, m){
   }
 }
 
+const ADVANCE_DELAY = 3400; // ms que se muestra el resultado antes de pasar al siguiente tiro
+
 function scheduleAutoAdvance(game){
   try{
     const key = (game.gameId || 'legacy') + '-' + (game.roundId||0) + '-' + game.phase + '-' + game.matchIndex;
     if(State.lastAutoAdvanceFor === key) return;
     State.lastAutoAdvanceFor = key;
-    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), 3400);
+    // Usamos el momento real en que se resolvió el tiro (no un timeout ciego): si el
+    // navegador pausó los timers (pantalla bloqueada, pestaña en segundo plano) y esto
+    // se ejecuta tarde, el delay puede terminar siendo 0 (avanza ya mismo) en vez de
+    // quedar esperando de más sobre un reloj que ya venía atrasado.
+    const elapsed = game.reveal && game.reveal.resolvedAt ? (Date.now() - game.reveal.resolvedAt) : 0;
+    const delay = Math.max(0, ADVANCE_DELAY - elapsed);
+    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), delay);
   } catch(e){
     logError('scheduleAutoAdvance', e);
   }
+}
+
+// Red de seguridad: los navegadores (sobre todo en celu) pausan los timers de JS cuando
+// la pantalla se bloquea o se cambia de app — el setTimeout de arriba puede no llegar a
+// disparar nunca. Si eso pasa, reintentamos apenas la pestaña vuelve a estar visible.
+// Llamar a advanceMatch de más no rompe nada: la transacción de Firebase (o el reducer
+// local del modo IA) verifica el índice actual y no hace nada si ya avanzó otro cliente.
+if(!window.__visibilityCatchupBound){
+  document.addEventListener('visibilitychange', () => {
+    try{
+      if(document.visibilityState !== 'visible') return;
+      const game = State.room && State.room.game;
+      if(!game || !game.reveal) return;
+      safeCall('advanceMatch.visibilitycatchup', () => advanceMatch(game.matchIndex));
+    } catch(e){
+      logError('visibilitychange.catchup', e);
+    }
+  });
+  window.__visibilityCatchupBound = true;
 }
 
 function renderMiniScoreboard(game){
