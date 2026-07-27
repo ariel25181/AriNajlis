@@ -9,7 +9,7 @@
 //   abajo) — solo cambia dónde se guarda el resultado.
 import { db, ServerValue } from './firebase.js';
 import { State } from './state.js';
-import { buildSuddenMatches, buildMainMatches, resolveOutcome, zoneLabel, TURN_DURATION } from './matches.js';
+import { buildSuddenMatches, buildMainMatches, resolveOutcome, zoneLabel, TURN_DURATION, MAX_SUDDEN_ROUNDS } from './matches.js';
 import { logError } from './logger.js';
 import { aiChooseDive, aiChooseKick, recordHumanShot, recordHumanDive, recordGamePlayed } from './ai.js';
 
@@ -118,7 +118,7 @@ export function fillDefaultsIfMissing(expectedIndex){
     if(isAiMode()){
       const game = State.room && State.room.game;
       if(!game || game.matchIndex !== expectedIndex || !game.turn || game.turn.resolved) return;
-      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5, power:0.5 };
+      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5 };
       if(!game.turn.gkFinal) game.turn.gkFinal = { x:0.5, y:0.5 };
       notifyLocal();
       return;
@@ -128,7 +128,7 @@ export function fillDefaultsIfMissing(expectedIndex){
       if(!game) return game;
       if(game.matchIndex !== expectedIndex) return; // ya avanzó, no tocar
       if(!game.turn || game.turn.resolved) return;
-      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5, power:0.5 };
+      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5 };
       if(!game.turn.gkFinal) game.turn.gkFinal = { x:0.5, y:0.5 };
       return game;
     }, (err) => { if(err) logError('fillDefaultsIfMissing.txn', err, { expectedIndex }); });
@@ -153,7 +153,7 @@ function tryResolveTurnReducer(game, expectedIndex){
   game.turn.resolved = true;
   game.reveal = {
     outcome, kick: game.turn.kickerFinal, gkPos: game.turn.gkFinal,
-    kicker: m.kicker, gk: m.gk, matchIndex: game.matchIndex
+    kicker: m.kicker, gk: m.gk, matchIndex: game.matchIndex, resolvedAt: Date.now()
   };
   if(goalScored){
     if(game.phase === 'main'){
@@ -231,6 +231,9 @@ function advanceMatchReducer(game, expectedIndex){
     const { max, tied } = computeTieBreak(game.suddenTied || [], game.suddenGoals || {});
     if(tied.length === 1 && max >= 0){
       game.winnerId = tied[0];
+    } else if((game.roundId || 0) >= MAX_SUDDEN_ROUNDS){
+      // Ya se jugaron las rondas de muerte súbita permitidas y sigue empatado: el partido termina en empate.
+      game.isDraw = true;
     } else {
       game.suddenTied = tied;
       game.suddenGoals = {}; tied.forEach(id => game.suddenGoals[id] = 0);
@@ -241,7 +244,7 @@ function advanceMatchReducer(game, expectedIndex){
     }
   }
   game.reveal = null;
-  if(!game.winnerId) primeAiTurn(game);
+  if(!game.winnerId && !game.isDraw) primeAiTurn(game);
   return game;
 }
 
@@ -252,7 +255,7 @@ export function advanceMatch(expectedIndex){
       const next = advanceMatchReducer(game, expectedIndex);
       if(next){
         State.room.game = next;
-        if(next.winnerId){ State.room.status = 'ended'; recordGamePlayed(); }
+        if(next.winnerId || next.isDraw){ State.room.status = 'ended'; recordGamePlayed(); }
         notifyLocal();
       }
       return;
@@ -261,7 +264,8 @@ export function advanceMatch(expectedIndex){
     gameRef().transaction(game => advanceMatchReducer(game, expectedIndex), (err, committed, snap) => {
       if(err){ logError('advanceMatch.txn', err, { expectedIndex }); return; }
       try{
-        if(committed && snap && snap.val() && snap.val().winnerId){
+        const val = snap && snap.val();
+        if(committed && val && (val.winnerId || val.isDraw)){
           roomRef().child('status').set('ended').catch(e => logError('advanceMatch.setEnded', e));
         }
       } catch(e){
