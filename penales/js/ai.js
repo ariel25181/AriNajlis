@@ -133,10 +133,9 @@ export function aiChooseKick(){
     }
     const goesHigh = Math.random() < (0.25 + exp*0.25);
     const y = goesHigh ? (0.06 + Math.random()*0.18) : (0.3 + Math.random()*0.35);
-    const power = Math.min(0.95, 0.45 + exp*0.4 + Math.random()*0.15);
-    return { x: zoneToX(zone), y, power };
+    return { x: zoneToX(zone), y };
   } catch(e){
     logError('ai.aiChooseKick', e);
-    return { x: 0.5, y: 0.3, power: 0.6 };
+    return { x: 0.5, y: 0.3 };
   }
 }
