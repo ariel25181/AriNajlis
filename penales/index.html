@@ -197,14 +197,6 @@
   @keyframes ringPop{ 0%{ transform:scale(1.4); opacity:0.5; } 100%{ transform:scale(1); opacity:1; } }
   .countdown-label{ font-size:12px; opacity:0.75; }
 
-  .power-wrap{ display:flex; align-items:center; gap:12px; }
-  .power-wrap label{ font-size:11px; letter-spacing:2px; text-transform:uppercase; opacity:0.7; white-space:nowrap; }
-  .power-wrap input[type=range]{ flex:1; -webkit-appearance:none; height:10px; border-radius:6px;
-    background: linear-gradient(90deg, #7CE7FF 0%, var(--lime) 50%, var(--red) 100%); outline:none; }
-  .power-wrap input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:24px; height:24px; border-radius:50%;
-    background:var(--chalk); border:3px solid var(--pitch-dark); cursor:pointer; }
-  .power-tag{ font-family:'Bebas Neue'; font-size:16px; min-width:56px; text-align:right; }
-
   .wait-screen{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
     gap:12px; flex:1; padding:14px 0;}
   .wait-screen .big-emoji{font-size:48px; animation:pulse 1.4s infinite;}
@@ -288,9 +280,9 @@
     <div class="final-title">RESULTADOS</div>
     <div class="scoreboard" id="finalScoreboard" style="margin:14px 0;"></div>
     <div class="winner-box" id="winnerBox">
-      <div class="trophy">🏆</div>
+      <div class="trophy" id="winnerTrophy">🏆</div>
       <div class="wname" id="winnerName"></div>
-      <div style="font-size:13px; opacity:0.8;">¡Campeón del picado!</div>
+      <div style="font-size:13px; opacity:0.8;" id="winnerSubtitle">¡Campeón del picado!</div>
     </div>
     <button class="big" id="btnRematch" style="display:none; margin-top:14px;">REVANCHA</button>
     <div class="wait-screen" id="finalWaiting" style="display:none;">
