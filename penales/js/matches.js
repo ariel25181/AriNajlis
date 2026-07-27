@@ -5,7 +5,8 @@ import { logError } from './logger.js';
 
 export const TURN_DURATION = 4000; // ms para que pateador y arquero se muevan libremente antes de patear/atajar
 export const GRACE = 1800;         // ms extra antes de aplicar default por inactividad
-export const KEEPER_REACH = 0.42;  // radio normalizado de estirada del arquero
+export const KEEPER_REACH = 0.55;  // radio normalizado de estirada del arquero (subido: atajar más fácil)
+export const MAX_SUDDEN_ROUNDS = 2; // rondas de muerte súbita antes de terminar en empate
 
 export function buildMainMatches(order){
   try{
@@ -39,7 +40,7 @@ export function buildSuddenMatches(tied){
   }
 }
 
-// kick: {x,y,power} normalizados 0..1 dentro del arco. gk: {x,y} normalizado.
+// kick: {x,y} normalizados 0..1 dentro del arco (ya no usa potencia). gk: {x,y} normalizado.
 // y=0 es el travesaño (arriba), y=1 es el piso del arco (abajo).
 export function resolveOutcome(kick, gk){
   try{
@@ -48,20 +49,20 @@ export function resolveOutcome(kick, gk){
     }
     const dx = kick.x - gk.x, dy = kick.y - gk.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
-    const power = typeof kick.power === 'number' ? kick.power : 0.5;
-    const nearEdge = kick.x < 0.1 || kick.x > 0.9 || kick.y < 0.08;
+    const nearEdge = kick.x < 0.08 || kick.x > 0.92 || kick.y < 0.06;
 
-    if(power > 0.82 && nearEdge && Math.random() < 0.15) return 'afuera';
+    // Chance chica e independiente de irse afuera si el tiro apunta muy pegado al palo/travesaño.
+    if(nearEdge && Math.random() < 0.08) return 'afuera';
 
-    // Los tiros altos (cerca del travesaño) son más difíciles de atajar en la realidad,
-    // aunque el arquero se tire para el lado correcto: reduce su alcance efectivo ahí.
+    // Los tiros altos (cerca del travesaño) siguen siendo algo más difíciles de atajar,
+    // aunque en general ahora es más fácil atajar que antes.
     const topness = Math.max(0, 1 - kick.y / 0.4); // 1 = pegado al travesaño, 0 = mitad de abajo o más
-    const effectiveReach = KEEPER_REACH * (1 - 0.28 * topness);
+    const effectiveReach = KEEPER_REACH * (1 - 0.18 * topness);
 
     if(dist > effectiveReach) return 'gol';
 
     const proximity = 1 - (dist / effectiveReach);
-    const saveChance = Math.min(0.93, proximity * (1 - 0.55*power));
+    const saveChance = Math.min(0.93, proximity * 0.85);
     return Math.random() < saveChance ? 'atajada' : 'gol';
   } catch(e){
     logError('resolveOutcome', e, { kick, gk });
