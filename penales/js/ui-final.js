@@ -22,7 +22,15 @@ export function renderFinal(){
         <span>${nameOf(id)}${id===State.pid?' (vos)':''}</span><span class="goals">${goals[id]||0}</span>
       </div>`).join('');
 
-    el('winnerName').textContent = nameOf(game.winnerId);
+    if(game.isDraw){
+      el('winnerTrophy').textContent = '🤝';
+      el('winnerName').textContent = 'EMPATE';
+      el('winnerSubtitle').textContent = `Después de ${game.roundId || 0} ronda(s) de muerte súbita, quedó parejo`;
+    } else {
+      el('winnerTrophy').textContent = '🏆';
+      el('winnerName').textContent = nameOf(game.winnerId);
+      el('winnerSubtitle').textContent = '¡Campeón del picado!';
+    }
 
     const isHost = State.pid === room.hostId;
     el('btnRematch').style.display = isHost ? 'block' : 'none';
