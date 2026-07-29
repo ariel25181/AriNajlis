@@ -6,7 +6,7 @@ export const State = {
   pid: null,
   room: null,
   lastAutoAdvanceFor: null,
-  localKick: { x: 0.5, y: 0.5, power: 0.5 },
+  localKick: { x: 0.5, y: 0.5 },
   localGk: { x: 0.5, y: 0.5 },
   submitted: false,
   countdownTimer: null,
@@ -16,7 +16,7 @@ export const State = {
 
 export function resetTurnLocalState(){
   State.submitted = false;
-  State.localKick = { x: 0.5, y: 0.5, power: 0.5 };
+  State.localKick = { x: 0.5, y: 0.5 };
   State.localGk = { x: 0.5, y: 0.5 };
   clearTimeout(State.countdownTimer);
   clearTimeout(State.fallbackTimer);
