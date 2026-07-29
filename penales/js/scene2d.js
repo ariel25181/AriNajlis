@@ -109,14 +109,15 @@ export function setKeeperPreview(x, y){
   }
 }
 
-export function animateShot(kickXY, gkXY, outcome, onDone){
+export function animateShot(kickXY, gkXY, outcome, precision, onDone){
   try{
     if(!ready){ if(onDone) onDone(); return; }
     const target = goalToCanvasFrac(kickXY.x, kickXY.y);
     const keeperTarget = goalToCanvasFrac(gkXY.x, gkXY.y);
     const startBall = { ...ballCanvasPos };
     const startKeeper = { ...keeperCanvasPos };
-    const dur = 1050; // más lenta que la versión original (550ms) pero un poco más ágil que antes (1300ms)
+    const p = typeof precision === 'number' ? Math.max(0, Math.min(1, precision)) : 1;
+    const dur = 1050 + (1 - p) * 550; // con mala precisión el tiro sale más lento/flojo
     const t0 = performance.now();
 
     function frame(now){
