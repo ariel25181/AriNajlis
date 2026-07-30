@@ -1,10 +1,10 @@
-// ui-game.js — pantalla de juego: escena 3D real (Three.js, cámara detrás del pateador),
-// apuntado libre + potencia sobre una capa 2D superpuesta, cuenta regresiva simultánea,
-// animación de resultado en 3D y tabla en vivo.
+// ui-game.js — pantalla de juego: escena 2D, apuntado libre + botón de precisión para el
+// pateador, arquero reactivo (se tira recién cuando sale la pelota), animación de resultado
+// y tabla en vivo.
 import { State, resetTurnLocalState } from './state.js';
 import { el, nameOf, clamp01, showScreen } from './utils.js';
 import { logError, safeCall } from './logger.js';
-import { TURN_DURATION, GRACE, zoneLabel } from './matches.js';
+import { TURN_DURATION, GRACE, zoneLabel, PRECISION_TIMEOUT_VALUE } from './matches.js';
 import { submitLocalFinal, fillDefaultsIfMissing, tryResolveTurn, advanceMatch } from './turn.js';
 import { initScene3D, disposeScene3D, resetPose, animateShot, setKickerTell, resize as resizeScene3D } from './scene2d.js';
 import { unlockAudio, playTick, playKick, playGoal, playSave, playWide } from './sound.js';
@@ -12,6 +12,12 @@ import { unlockAudio, playTick, playKick, playGoal, playSave, playWide } from '.
 // Coordenadas del "arco" dentro de la escena, en % de la caja .scene — se usan solo
 // para ubicar la capa 2D de retículas (el dibujo del arco lo hace scene2d.js).
 const GOAL_BOX = { x0: 15, x1: 85, y0: 10, y1: 55 };
+
+const PRECISION_CYCLE_MS = 1000; // el círculo se achica y reinicia cada 1s
+const PRECISION_MAX_PX = 64;
+const PRECISION_MIN_PX = 8;
+let precisionRafId = null;
+let precisionCycleStart = 0;
 
 // El resize del canvas 3D se ajusta solo una vez por carga de página.
 if(!window.__scene3dResizeBound){
@@ -78,12 +84,19 @@ export function renderGame(){
     const iAmKicker = m.kicker === State.pid;
     const iAmGk = m.gk === State.pid;
 
+    // El arquero reacciona apenas se patea la pelota: si el pateador ya definió y yo
+    // (arquero) todavía no envié mi posición, la fijo ahora mismo con mi arrastre actual —
+    // nunca tuve mi propia cuenta regresiva, elijo libre hasta este instante.
+    if(iAmGk && turn && turn.kickerFinal && !turn.gkFinal && !State.submitted){
+      safeCall('gkReactSubmit', () => submitGkFinal());
+    }
+
     if(State.renderedMatchKey !== matchKey){
       State.renderedMatchKey = matchKey;
       resetTurnLocalState();
       buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn);
     }
-    updateCountdownUI(turn);
+    if(iAmKicker) updateCountdownUI(turn);
   } catch(e){
     logError('renderGame', e);
   }
@@ -92,6 +105,31 @@ export function renderGame(){
 function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
   try{
     const role = iAmKicker ? 'PATEÁS VOS' : iAmGk ? 'ATAJÁS VOS' : 'MIRÁS';
+
+    const topPanel = iAmKicker ? `
+      <div class="countdown-wrap">
+        <div class="countdown-ring" id="ring">
+          <svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" stroke="rgba(255,255,255,0.15)" stroke-width="5" fill="none"/>
+            <circle id="ringProgress" cx="23" cy="23" r="19" stroke="var(--lime)" stroke-width="5" fill="none"
+              stroke-dasharray="119" stroke-dashoffset="0" stroke-linecap="round"/></svg>
+          <span id="ringNum">4</span>
+        </div>
+        <div class="countdown-label">Elegí dirección arrastrando, y tocá el círculo de precisión</div>
+      </div>
+    ` : iAmGk ? `
+      <div class="gk-ready-panel">
+        <div class="gk-ready-icon">🧤</div>
+        <div class="gk-ready-text">Movete libre — te tirás apenas patee ${nameOf(m.kicker)}</div>
+      </div>
+    ` : '';
+
+    const precisionPanel = iAmKicker ? `
+      <div class="precision-wrap" id="precisionWrap">
+        <div class="precision-track"><div class="precision-circle" id="precisionCircle"></div></div>
+        <div class="precision-label">Tocá el círculo cuando esté lo más chico posible</div>
+      </div>
+    ` : '';
+
     body.innerHTML = `
       <div class="turn-banner">
         <div class="role">${role}</div>
@@ -99,15 +137,7 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
         <div class="vs">${iAmKicker ? 'vs '+nameOf(m.gk)+' (arquero)' : iAmGk ? 'Penal de '+nameOf(m.kicker) : '¡Definen al mismo tiempo!'}</div>
         ${iAmGk ? kickerHistoryHint(m.kicker) : ''}
       </div>
-      <div class="countdown-wrap">
-        <div class="countdown-ring" id="ring">
-          <svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" stroke="rgba(255,255,255,0.15)" stroke-width="5" fill="none"/>
-            <circle id="ringProgress" cx="23" cy="23" r="19" stroke="var(--lime)" stroke-width="5" fill="none"
-              stroke-dasharray="119" stroke-dashoffset="0" stroke-linecap="round"/></svg>
-          <span id="ringNum">5</span>
-        </div>
-        <div class="countdown-label">Mantené el dedo apretado y movelo — donde lo sueltes queda fijado</div>
-      </div>
+      ${topPanel}
       <div class="scene" id="scene">
         <canvas id="three-canvas"></canvas>
         ${hudPlatesHTML(nameOf(m.kicker), nameOf(m.gk))}
@@ -116,11 +146,7 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
         <div class="fx-flash" id="fxFlash"></div>
         <div class="drag-surface" id="dragSurface"></div>
       </div>
-      <div class="power-wrap" id="powerWrap" style="display:none;">
-        <label>Potencia</label>
-        <input type="range" id="powerSlider" min="0" max="100" value="50">
-        <span class="power-tag" id="powerTag">MEDIA</span>
-      </div>
+      ${precisionPanel}
       <div class="locked-note" id="lockedNote" style="display:none;">✅ Elección enviada — esperando al resto…</div>
     `;
 
@@ -131,11 +157,16 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
 
     if(iAmKicker || iAmGk){
       el(iAmKicker ? 'kickReticle' : 'gkReticle').style.display = 'flex';
-      if(iAmKicker) el('powerWrap').style.display = 'flex';
       wireDragControls(iAmKicker, iAmGk);
+      scheduleFallbackDefaults(turn);
     }
 
-    wireCountdown(m, iAmKicker, iAmGk, turn);
+    if(iAmKicker){
+      wireCountdown(m, turn);
+      wirePrecisionCircle();
+    }
+    // El arquero no tiene cuenta regresiva ni botón propio: su envío es reactivo,
+    // se dispara solo desde renderGame() apenas detecta que ya se pateó la pelota.
   } catch(e){
     logError('buildInteractiveScreen', e, { match: m });
   }
@@ -182,27 +213,62 @@ function wireDragControls(iAmKicker, iAmGk){
         handleMove(e.clientX, e.clientY);
       } catch(err){ logError('dragSurface.pointermove', err); }
     }, { passive: false });
-
-    if(iAmKicker){
-      const slider = el('powerSlider');
-      slider.addEventListener('input', () => {
-        try{
-          if(State.submitted) return;
-          State.localKick.power = slider.value/100;
-          el('powerTag').textContent = State.localKick.power < 0.34 ? 'SUAVE' : State.localKick.power < 0.67 ? 'MEDIA' : 'FUERTE';
-        } catch(err){ logError('powerSlider.input', err); }
-      });
-    }
   } catch(e){
     logError('wireDragControls', e);
   }
 }
 
-function wireCountdown(m, iAmKicker, iAmGk, turn){
+// Círculo de precisión: solo lo ve/usa el pateador. Se achica en loop de 1s; tocarlo fija
+// el tiro YA MISMO con la dirección actual + la precisión leída en ese instante exacto
+// (0 = círculo recién grande = precisión pésima, 1 = círculo bien chico = precisión perfecta).
+function wirePrecisionCircle(){
+  try{
+    precisionCycleStart = performance.now();
+    const circleEl = el('precisionCircle');
+
+    function frame(){
+      if(State.submitted){ precisionRafId = null; return; }
+      const elapsed = (performance.now() - precisionCycleStart) % PRECISION_CYCLE_MS;
+      const t = elapsed / PRECISION_CYCLE_MS;
+      const size = PRECISION_MAX_PX - (PRECISION_MAX_PX - PRECISION_MIN_PX) * t;
+      if(circleEl){ circleEl.style.width = size + 'px'; circleEl.style.height = size + 'px'; }
+      precisionRafId = requestAnimationFrame(frame);
+    }
+    precisionRafId = requestAnimationFrame(frame);
+
+    const wrap = el('precisionWrap');
+    if(wrap){
+      wrap.addEventListener('pointerdown', e => {
+        try{
+          e.preventDefault();
+          safeCall('unlockAudio', () => unlockAudio());
+          if(State.submitted) return;
+          const elapsed = (performance.now() - precisionCycleStart) % PRECISION_CYCLE_MS;
+          const precision = elapsed / PRECISION_CYCLE_MS;
+          submitKickerFinal(precision);
+        } catch(err){ logError('precisionCircle.pointerdown', err); }
+      });
+    }
+  } catch(e){
+    logError('wirePrecisionCircle', e);
+  }
+}
+
+function stopPrecisionLoop(){
+  try{
+    if(precisionRafId){ cancelAnimationFrame(precisionRafId); precisionRafId = null; }
+  } catch(e){
+    logError('stopPrecisionLoop', e);
+  }
+}
+
+// Cuenta regresiva — ahora es SOLO del pateador. Si se agota sin tocar el círculo de
+// precisión, se patea igual hacia donde esté la mira, pero con precisión fija muy mala.
+function wireCountdown(m, turn){
   try{
     const startedAt = turn.startedAt;
     const duration = turn.duration || TURN_DURATION;
-    const TELL_WINDOW = 1200; // últimos ms donde el pateador muestra la "seña"
+    const TELL_WINDOW = 1200;
     let tellTriggered = false;
 
     function tick(){
@@ -214,8 +280,7 @@ function wireCountdown(m, iAmKicker, iAmGk, turn){
           safeCall('setKickerTell', () => setKickerTell(true));
         }
         if(remaining <= 0){
-          // Se acabó el tiempo: se patea/ataja hacia donde esté el cross-arrow en ese instante.
-          submitLocalFinalForRole(m, iAmKicker, iAmGk);
+          submitKickerFinal(PRECISION_TIMEOUT_VALUE);
           return;
         }
         State.countdownTimer = setTimeout(tick, 80);
@@ -224,30 +289,56 @@ function wireCountdown(m, iAmKicker, iAmGk, turn){
       }
     }
     tick();
-
-    State.fallbackTimer = setTimeout(() => {
-      safeCall('fillDefaultsIfMissing', () => fillDefaultsIfMissing(State.room.game.matchIndex));
-    }, duration + GRACE);
   } catch(e){
     logError('wireCountdown', e);
   }
 }
 
-function submitLocalFinalForRole(m, iAmKicker, iAmGk){
+// Red de seguridad independiente del rol: si por lo que sea nadie termina de enviar su
+// elección (desconexión, etc.), esto rellena valores default para que el partido no quede
+// esperando para siempre.
+function scheduleFallbackDefaults(turn){
+  try{
+    const duration = turn.duration || TURN_DURATION;
+    State.fallbackTimer = setTimeout(() => {
+      safeCall('fillDefaultsIfMissing', () => fillDefaultsIfMissing(State.room.game.matchIndex));
+    }, duration + GRACE);
+  } catch(e){
+    logError('scheduleFallbackDefaults', e);
+  }
+}
+
+function lockInteractiveUI(){
+  try{
+    const lockedNote = el('lockedNote'); if(lockedNote) lockedNote.style.display = 'block';
+    const dragSurface = el('dragSurface'); if(dragSurface) dragSurface.style.pointerEvents = 'none';
+    const precisionWrap = el('precisionWrap'); if(precisionWrap) precisionWrap.style.pointerEvents = 'none';
+  } catch(e){
+    logError('lockInteractiveUI', e);
+  }
+}
+
+function submitKickerFinal(precision){
   try{
     if(State.submitted) return;
     State.submitted = true;
     clearTimeout(State.countdownTimer);
-    const lockedNote = el('lockedNote'); if(lockedNote) lockedNote.style.display = 'block';
-    const dragSurface = el('dragSurface'); if(dragSurface) dragSurface.style.pointerEvents = 'none';
-
-    if(iAmKicker){
-      submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, power: State.localKick.power });
-    } else if(iAmGk){
-      submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y });
-    }
+    stopPrecisionLoop();
+    lockInteractiveUI();
+    submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, precision });
   } catch(e){
-    logError('submitLocalFinalForRole', e);
+    logError('submitKickerFinal', e);
+  }
+}
+
+function submitGkFinal(){
+  try{
+    if(State.submitted) return;
+    State.submitted = true;
+    lockInteractiveUI();
+    submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y });
+  } catch(e){
+    logError('submitGkFinal', e);
   }
 }
 
@@ -305,7 +396,7 @@ function renderResult(body, reveal, m){
     safeCall('resetPose.result', () => resetPose());
     safeCall('playKick', () => playKick());
 
-    safeCall('animateShot', () => animateShot(reveal.kick, reveal.gkPos, reveal.outcome, () => {
+    safeCall('animateShot', () => animateShot(reveal.kick, reveal.gkPos, reveal.outcome, reveal.precision, () => {
       try{
         if(reveal.outcome === 'gol'){
           el('resultWord').textContent = '¡GOOOOL!';
@@ -328,15 +419,42 @@ function renderResult(body, reveal, m){
   }
 }
 
+const ADVANCE_DELAY = 3400; // ms que se muestra el resultado antes de pasar al siguiente tiro
+
 function scheduleAutoAdvance(game){
   try{
     const key = (game.gameId || 'legacy') + '-' + (game.roundId||0) + '-' + game.phase + '-' + game.matchIndex;
     if(State.lastAutoAdvanceFor === key) return;
     State.lastAutoAdvanceFor = key;
-    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), 3400);
+    // Usamos el momento real en que se resolvió el tiro (no un timeout ciego): si el
+    // navegador pausó los timers (pantalla bloqueada, pestaña en segundo plano) y esto
+    // se ejecuta tarde, el delay puede terminar siendo 0 (avanza ya mismo) en vez de
+    // quedar esperando de más sobre un reloj que ya venía atrasado.
+    const elapsed = game.reveal && game.reveal.resolvedAt ? (Date.now() - game.reveal.resolvedAt) : 0;
+    const delay = Math.max(0, ADVANCE_DELAY - elapsed);
+    setTimeout(() => safeCall('advanceMatch', () => advanceMatch(game.matchIndex)), delay);
   } catch(e){
     logError('scheduleAutoAdvance', e);
   }
+}
+
+// Red de seguridad: los navegadores (sobre todo en celu) pausan los timers de JS cuando
+// la pantalla se bloquea o se cambia de app — el setTimeout de arriba puede no llegar a
+// disparar nunca. Si eso pasa, reintentamos apenas la pestaña vuelve a estar visible.
+// Llamar a advanceMatch de más no rompe nada: la transacción de Firebase (o el reducer
+// local del modo IA) verifica el índice actual y no hace nada si ya avanzó otro cliente.
+if(!window.__visibilityCatchupBound){
+  document.addEventListener('visibilitychange', () => {
+    try{
+      if(document.visibilityState !== 'visible') return;
+      const game = State.room && State.room.game;
+      if(!game || !game.reveal) return;
+      safeCall('advanceMatch.visibilitycatchup', () => advanceMatch(game.matchIndex));
+    } catch(e){
+      logError('visibilitychange.catchup', e);
+    }
+  });
+  window.__visibilityCatchupBound = true;
 }
 
 function renderMiniScoreboard(game){

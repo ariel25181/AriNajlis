@@ -197,13 +197,18 @@
   @keyframes ringPop{ 0%{ transform:scale(1.4); opacity:0.5; } 100%{ transform:scale(1); opacity:1; } }
   .countdown-label{ font-size:12px; opacity:0.75; }
 
-  .power-wrap{ display:flex; align-items:center; gap:12px; }
-  .power-wrap label{ font-size:11px; letter-spacing:2px; text-transform:uppercase; opacity:0.7; white-space:nowrap; }
-  .power-wrap input[type=range]{ flex:1; -webkit-appearance:none; height:10px; border-radius:6px;
-    background: linear-gradient(90deg, #7CE7FF 0%, var(--lime) 50%, var(--red) 100%); outline:none; }
-  .power-wrap input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:24px; height:24px; border-radius:50%;
-    background:var(--chalk); border:3px solid var(--pitch-dark); cursor:pointer; }
-  .power-tag{ font-family:'Bebas Neue'; font-size:16px; min-width:56px; text-align:right; }
+  .gk-ready-panel{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 0; }
+  .gk-ready-icon{ font-size:32px; animation: gkPulse 1.4s ease-in-out infinite; }
+  @keyframes gkPulse{ 0%,100%{ transform:scale(1); opacity:0.85; } 50%{ transform:scale(1.12); opacity:1; } }
+  .gk-ready-text{ font-size:13px; color:var(--lime); text-align:center; max-width:280px; }
+
+  .precision-wrap{ display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:6px;
+    padding:14px 0; cursor:pointer; touch-action:none; -webkit-user-select:none; user-select:none; }
+  .precision-track{ width:78px; height:78px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    border:2px dashed rgba(216,243,77,0.35); flex-shrink:0; }
+  .precision-circle{ width:64px; height:64px; border-radius:50%; background:radial-gradient(circle, var(--lime), #9fc93a);
+    box-shadow:0 0 16px rgba(216,243,77,0.7); transition:none; }
+  .precision-label{ font-size:12px; color:var(--chalk); opacity:0.8; text-align:center; max-width:260px; }
 
   .wait-screen{display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
     gap:12px; flex:1; padding:14px 0;}
@@ -288,9 +293,9 @@
     <div class="final-title">RESULTADOS</div>
     <div class="scoreboard" id="finalScoreboard" style="margin:14px 0;"></div>
     <div class="winner-box" id="winnerBox">
-      <div class="trophy">🏆</div>
+      <div class="trophy" id="winnerTrophy">🏆</div>
       <div class="wname" id="winnerName"></div>
-      <div style="font-size:13px; opacity:0.8;">¡Campeón del picado!</div>
+      <div style="font-size:13px; opacity:0.8;" id="winnerSubtitle">¡Campeón del picado!</div>
     </div>
     <button class="big" id="btnRematch" style="display:none; margin-top:14px;">REVANCHA</button>
     <div class="wait-screen" id="finalWaiting" style="display:none;">
