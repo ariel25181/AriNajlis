@@ -4,7 +4,8 @@
 import { State, resetTurnLocalState } from './state.js';
 import { el, nameOf, clamp01, showScreen } from './utils.js';
 import { logError, safeCall } from './logger.js';
-import { TURN_DURATION, GRACE, zoneLabel, PRECISION_TIMEOUT_VALUE } from './matches.js';
+import { TURN_DURATION, GRACE, zoneLabel, PRECISION_TIMEOUT_VALUE, CONFIG_DEFAULTS } from './matches.js';
+import { sanitizeConfig } from './config.js';
 import { submitLocalFinal, fillDefaultsIfMissing, tryResolveTurn, advanceMatch } from './turn.js';
 import { initScene3D, disposeScene3D, resetPose, animateShot, setKickerTell, resize as resizeScene3D } from './scene2d.js';
 import { unlockAudio, playTick, playKick, playGoal, playSave, playWide } from './sound.js';
@@ -13,9 +14,6 @@ import { unlockAudio, playTick, playKick, playGoal, playSave, playWide } from '.
 // para ubicar la capa 2D de retículas (el dibujo del arco lo hace scene2d.js).
 const GOAL_BOX = { x0: 15, x1: 85, y0: 10, y1: 55 };
 
-const PRECISION_CYCLE_MS = 1000; // el círculo se achica y reinicia cada 1s
-const PRECISION_MAX_PX = 64;
-const PRECISION_MIN_PX = 8;
 let precisionRafId = null;
 let precisionCycleStart = 0;
 
@@ -157,7 +155,7 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
 
     if(iAmKicker || iAmGk){
       el(iAmKicker ? 'kickReticle' : 'gkReticle').style.display = 'flex';
-      wireDragControls(iAmKicker, iAmGk);
+      wireSwipeControls(iAmKicker, iAmGk);
       scheduleFallbackDefaults(turn);
     }
 
@@ -172,28 +170,58 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
   }
 }
 
-function wireDragControls(iAmKicker, iAmGk){
+const SWIPE_REFERENCE_PX = 130; // distancia de referencia en pantalla para un "deslizamiento completo"
+const SWIPE_CENTER = { x: 0.5, y: 0.4 };
+
+// Convierte el vector del deslizamiento (en píxeles de pantalla, desde donde tocaste hasta
+// donde estás ahora) en un punto dentro del arco: el ángulo define el lado/altura, el largo
+// define qué tan lejos del centro (tope según swipeMaxDistance de la configuración).
+function swipeVectorToTarget(dx, dy, cfg){
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const norm = Math.min(1, dist / SWIPE_REFERENCE_PX);
+  const angle = Math.atan2(dy, dx);
+  const reach = cfg.swipeMaxDistance;
+  const x = clamp01(SWIPE_CENTER.x + Math.cos(angle) * norm * reach * 1.7);
+  const y = clamp01(SWIPE_CENTER.y + Math.sin(angle) * norm * reach * 1.7 * 0.62);
+  return { x, y };
+}
+
+// Qué tan "limpio" (fluido) fue el trazo: cerca de 1 si fue una línea recta de un solo
+// tirón, más bajo cuanto más tembloroso/cortado (mucho recorrido total para poco avance neto).
+function computeSwipeFluidity(path){
+  if(!path || path.length < 2) return 0.4;
+  let totalLen = 0;
+  for(let i=1;i<path.length;i++){
+    const dx = path[i].x - path[i-1].x, dy = path[i].y - path[i-1].y;
+    totalLen += Math.sqrt(dx*dx + dy*dy);
+  }
+  if(totalLen < 4) return 0.4; // prácticamente no se movió, ni bueno ni malo
+  const s = path[0], e = path[path.length-1];
+  const straight = Math.sqrt((e.x-s.x)**2 + (e.y-s.y)**2);
+  return clamp01(straight / totalLen);
+}
+
+function wireSwipeControls(iAmKicker, iAmGk){
   try{
     const surface = el('dragSurface');
+    const cfg = sanitizeConfig(State.room?.game?.config);
+    let swiping = false;
+    let startPt = null;
+    let path = [];
 
-    function pointToNorm(clientX, clientY){
-      const r = el('scene').getBoundingClientRect();
-      const gx0 = r.left + r.width*(GOAL_BOX.x0/100), gx1 = r.left + r.width*(GOAL_BOX.x1/100);
-      const gy0 = r.top + r.height*(GOAL_BOX.y0/100), gy1 = r.top + r.height*(GOAL_BOX.y1/100);
-      return { x: clamp01((clientX-gx0)/(gx1-gx0)), y: clamp01((clientY-gy0)/(gy1-gy0)) };
+    function applyTarget(target){
+      if(iAmKicker){
+        State.localKick.x = target.x; State.localKick.y = target.y;
+        positionKickReticle(target.x, target.y);
+      } else {
+        State.localGk.x = target.x; State.localGk.y = target.y;
+        positionGkReticle(target.x, target.y);
+      }
     }
 
-    // El arquero NO se mueve en vivo mientras se arrastra — se queda quieto (pose lista)
-    // y recién se tira en la animación del tiro, hacia la posición final elegida.
-    function handleMove(clientX, clientY){
-      const p = pointToNorm(clientX, clientY);
-      if(iAmKicker){
-        State.localKick.x = p.x; State.localKick.y = p.y;
-        positionKickReticle(p.x, p.y);
-      } else {
-        State.localGk.x = p.x; State.localGk.y = p.y;
-        positionGkReticle(p.x, p.y);
-      }
+    function applyFluidity(fluidity){
+      if(iAmKicker) State.localKick.fluidity = fluidity;
+      else State.localGk.fluidity = fluidity;
     }
 
     surface.addEventListener('pointerdown', e => {
@@ -201,36 +229,55 @@ function wireDragControls(iAmKicker, iAmGk){
         safeCall('unlockAudio', () => unlockAudio());
         if(State.submitted) return;
         e.preventDefault();
-        handleMove(e.clientX, e.clientY);
-        try{ surface.setPointerCapture(e.pointerId); } catch(_capErr){ /* no crítico: la posición ya se fijó arriba */ }
+        swiping = true;
+        startPt = { x: e.clientX, y: e.clientY };
+        path = [startPt];
+        try{ surface.setPointerCapture(e.pointerId); } catch(_capErr){ /* no crítico */ }
       } catch(err){ logError('dragSurface.pointerdown', err); }
     });
+
     surface.addEventListener('pointermove', e => {
       try{
-        if(State.submitted) return;
+        if(State.submitted || !swiping) return;
         if(e.buttons !== 1 && e.pointerType === 'mouse') return;
         e.preventDefault();
-        handleMove(e.clientX, e.clientY);
+        const pt = { x: e.clientX, y: e.clientY };
+        path.push(pt);
+        applyTarget(swipeVectorToTarget(pt.x - startPt.x, pt.y - startPt.y, cfg));
       } catch(err){ logError('dragSurface.pointermove', err); }
     }, { passive: false });
+
+    function finishSwipe(e){
+      try{
+        if(State.submitted || !swiping) return;
+        swiping = false;
+        const pt = { x: e.clientX, y: e.clientY };
+        path.push(pt);
+        applyTarget(swipeVectorToTarget(pt.x - startPt.x, pt.y - startPt.y, cfg));
+        applyFluidity(computeSwipeFluidity(path));
+      } catch(err){ logError('dragSurface.pointerup', err); }
+    }
+    surface.addEventListener('pointerup', finishSwipe);
+    surface.addEventListener('pointercancel', finishSwipe);
   } catch(e){
-    logError('wireDragControls', e);
+    logError('wireSwipeControls', e);
   }
 }
 
-// Círculo de precisión: solo lo ve/usa el pateador. Se achica en loop de 1s; tocarlo fija
-// el tiro YA MISMO con la dirección actual + la precisión leída en ese instante exacto
+// Círculo de precisión: solo lo ve/usa el pateador. Se achica en loop configurable; tocarlo
+// fija el tiro YA MISMO con la dirección actual + la precisión leída en ese instante exacto
 // (0 = círculo recién grande = precisión pésima, 1 = círculo bien chico = precisión perfecta).
 function wirePrecisionCircle(){
   try{
+    const cfg = sanitizeConfig(State.room?.game?.config);
     precisionCycleStart = performance.now();
     const circleEl = el('precisionCircle');
 
     function frame(){
       if(State.submitted){ precisionRafId = null; return; }
-      const elapsed = (performance.now() - precisionCycleStart) % PRECISION_CYCLE_MS;
-      const t = elapsed / PRECISION_CYCLE_MS;
-      const size = PRECISION_MAX_PX - (PRECISION_MAX_PX - PRECISION_MIN_PX) * t;
+      const elapsed = (performance.now() - precisionCycleStart) % cfg.precisionCycleMs;
+      const t = elapsed / cfg.precisionCycleMs;
+      const size = cfg.precisionMaxPx - (cfg.precisionMaxPx - cfg.precisionMinPx) * t;
       if(circleEl){ circleEl.style.width = size + 'px'; circleEl.style.height = size + 'px'; }
       precisionRafId = requestAnimationFrame(frame);
     }
@@ -243,8 +290,8 @@ function wirePrecisionCircle(){
           e.preventDefault();
           safeCall('unlockAudio', () => unlockAudio());
           if(State.submitted) return;
-          const elapsed = (performance.now() - precisionCycleStart) % PRECISION_CYCLE_MS;
-          const precision = elapsed / PRECISION_CYCLE_MS;
+          const elapsed = (performance.now() - precisionCycleStart) % cfg.precisionCycleMs;
+          const precision = elapsed / cfg.precisionCycleMs;
           submitKickerFinal(precision);
         } catch(err){ logError('precisionCircle.pointerdown', err); }
       });
@@ -325,7 +372,7 @@ function submitKickerFinal(precision){
     clearTimeout(State.countdownTimer);
     stopPrecisionLoop();
     lockInteractiveUI();
-    submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, precision });
+    submitLocalFinal('kicker', { x: State.localKick.x, y: State.localKick.y, precision, fluidity: State.localKick.fluidity });
   } catch(e){
     logError('submitKickerFinal', e);
   }
@@ -336,7 +383,7 @@ function submitGkFinal(){
     if(State.submitted) return;
     State.submitted = true;
     lockInteractiveUI();
-    submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y });
+    submitLocalFinal('gk', { x: State.localGk.x, y: State.localGk.y, fluidity: State.localGk.fluidity });
   } catch(e){
     logError('submitGkFinal', e);
   }
