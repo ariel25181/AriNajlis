@@ -3,15 +3,36 @@
 // no de red — por eso además validamos inputs y logueamos si llegan datos raros.
 import { logError } from './logger.js';
 
-export const TURN_DURATION = 4000; // ms para que pateador y arquero se muevan libremente antes de patear/atajar
-export const GRACE = 1800;         // ms extra antes de aplicar default por inactividad
-export const KEEPER_REACH = 0.55;  // radio normalizado de estirada del arquero (subido: atajar más fácil)
-export const MAX_SUDDEN_ROUNDS = 2; // rondas de muerte súbita antes de terminar en empate
-export const PRECISION_TIMEOUT_VALUE = 0.08; // precisión fija y mala si se agota el tiempo sin tocar el botón de precisión
+// Valores por defecto de todos los parámetros ajustables desde el panel de configuración.
+// Se pueden pisar por jugador (modo IA, guardado en localStorage) o por sala (modo online,
+// el host los fija al crear la sala y quedan sincronizados para los dos vía Firebase).
+export const CONFIG_DEFAULTS = {
+  turnDuration: 4000,       // ms de la ventana de decisión del pateador
+  swipeMaxDistance: 0.32,   // fracción de la escena que ya es "tope, apuntando al palo"
+  precisionCycleMs: 1000,   // duración del ciclo del círculo de precisión
+  precisionMaxPx: 64,       // tamaño más grande del círculo
+  precisionMinPx: 8,        // tamaño más chico del círculo
+  fluidityWeight: 0.15,     // cuánto pesa lo fluido del gesto sobre la precisión final (0-1)
+  keeperReach: 0.55,        // radio normalizado de estirada del arquero
+  heightDifficulty: 0.18    // cuánto más difícil es atajar cuanto más arriba apunta el tiro
+};
 
-function clampP(v){
+export const GRACE = 1800;          // ms extra antes de aplicar default por inactividad
+export const MAX_SUDDEN_ROUNDS = 2; // rondas de muerte súbita antes de terminar en empate
+export const PRECISION_TIMEOUT_VALUE = 0.08; // precisión fija y mala si se agota el tiempo sin tocar el botón
+
+// Compat: algunos módulos viejos podían importar estas constantes sueltas directamente.
+export const TURN_DURATION = CONFIG_DEFAULTS.turnDuration;
+export const KEEPER_REACH = CONFIG_DEFAULTS.keeperReach;
+
+export function clamp01(v){
   if(typeof v !== 'number' || Number.isNaN(v)) return 0.5;
   return Math.max(0, Math.min(1, v));
+}
+function clampP(v){ return clamp01(v); }
+
+function withDefaults(cfg){
+  return Object.assign({}, CONFIG_DEFAULTS, cfg || {});
 }
 
 // Mezcla el punto apuntado hacia el centro del arco según qué tan mala fue la precisión.
@@ -65,13 +86,16 @@ export function buildSuddenMatches(tied){
   }
 }
 
-// kick: {x,y,precision} normalizados 0..1 dentro del arco (precision 0..1, viene del botón
-// de precisión). gk: {x,y} normalizado. y=0 es el travesaño (arriba), y=1 el piso del arco.
-export function resolveOutcome(kick, gk, precision){
+// kick: {x,y,precision} normalizados 0..1 dentro del arco (precision 0..1, ya combina el
+// círculo de precisión + el bonus/penalización por fluidez del gesto de deslizar).
+// gk: {x,y} normalizado. y=0 es el travesaño (arriba), y=1 el piso del arco.
+// cfg: parámetros ajustables (ver CONFIG_DEFAULTS) — si no se pasa, usa los valores default.
+export function resolveOutcome(kick, gk, precision, cfg){
   try{
     if(!kick || !gk || typeof kick.x !== 'number' || typeof gk.x !== 'number'){
       throw new Error('resolveOutcome recibió datos inválidos: ' + JSON.stringify({kick, gk}));
     }
+    const c = withDefaults(cfg);
     const p = clampP(typeof precision === 'number' ? precision : kick.precision);
     const nearEdge = kick.x < 0.08 || kick.x > 0.92 || kick.y < 0.06;
 
@@ -88,7 +112,11 @@ export function resolveOutcome(kick, gk, precision){
 
     // Los tiros altos (cerca del travesaño) siguen siendo algo más difíciles de atajar.
     const topness = Math.max(0, 1 - adjusted.y / 0.4);
-    const effectiveReach = KEEPER_REACH * (1 - 0.18 * topness);
+    // Un gesto de atajada fluido (deslizamiento limpio) da un poquito más de alcance real;
+    // uno tembloroso/cortado lo reduce un poco.
+    const gkFluidity = typeof gk.fluidity === 'number' ? clampP(gk.fluidity) : 0.5;
+    const fluidityFactor = 0.9 + 0.15 * gkFluidity;
+    const effectiveReach = c.keeperReach * (1 - c.heightDifficulty * topness) * fluidityFactor;
 
     if(dist > effectiveReach) return 'gol';
 
