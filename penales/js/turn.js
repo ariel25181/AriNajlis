@@ -9,7 +9,8 @@
 //   abajo) — solo cambia dónde se guarda el resultado.
 import { db, ServerValue } from './firebase.js';
 import { State } from './state.js';
-import { buildSuddenMatches, buildMainMatches, resolveOutcome, applyPrecision, zoneLabel, TURN_DURATION, MAX_SUDDEN_ROUNDS } from './matches.js';
+import { buildSuddenMatches, buildMainMatches, resolveOutcome, applyPrecision, zoneLabel, clamp01, CONFIG_DEFAULTS, MAX_SUDDEN_ROUNDS } from './matches.js';
+import { sanitizeConfig } from './config.js';
 import { logError } from './logger.js';
 import { aiChooseDive, aiChooseKick, recordHumanShot, recordHumanDive, recordGamePlayed } from './ai.js';
 
@@ -33,8 +34,9 @@ function notifyLocal(){
 function roomRef(){ return db.ref('penales/salas/' + State.roomCode); }
 function gameRef(){ return db.ref(`penales/salas/${State.roomCode}/game`); }
 
-function freshTurn(){
-  return { startedAt: isAiMode() ? Date.now() : ServerValue.TIMESTAMP, duration: TURN_DURATION, kickerFinal:null, gkFinal:null, resolved:false };
+function freshTurn(cfg){
+  const c = cfg || CONFIG_DEFAULTS;
+  return { startedAt: isAiMode() ? Date.now() : ServerValue.TIMESTAMP, duration: c.turnDuration, kickerFinal:null, gkFinal:null, resolved:false };
 }
 
 // Si a la IA le toca ATAJAR en el partido actual, ya NO decide de entrada — reacciona
@@ -66,7 +68,7 @@ function scheduleAiKickIfNeeded(game){
     if(!m || m.kicker !== 'ai') return game;
 
     const snapshot = { gameId: game.gameId, roundId: game.roundId, phase: game.phase, matchIndex: game.matchIndex };
-    const duration = (game.turn && game.turn.duration) || TURN_DURATION;
+    const duration = (game.turn && game.turn.duration) || (game.config && game.config.turnDuration) || CONFIG_DEFAULTS.turnDuration;
     const delay = duration * (0.35 + Math.random() * 0.45); // entre 35% y 80% de la ventana
 
     setTimeout(() => {
@@ -95,9 +97,11 @@ export function startMainGame(order, matches){
   try{
     const goals = {}; order.forEach(id => goals[id] = 0);
     const gameId = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    const cfg = sanitizeConfig((State.room && State.room.config) || State.config);
     const game = {
       gameId, roundId: 0, phase: 'main', order, matches, matchIndex: 0, goals,
-      turn: freshTurn(),
+      config: cfg,
+      turn: freshTurn(cfg),
       reveal: null, suddenTied: null, suddenGoals: null, winnerId: null
     };
     scheduleAiKickIfNeeded(game);
@@ -123,6 +127,7 @@ export function startAiGame(humanName){
     State.room = {
       hostId: 'human', status: 'lobby',
       players: { human: { name: humanName || 'Vos', order: 0 }, ai: { name: 'IA 🤖', order: 1 } },
+      config: sanitizeConfig(State.config), // toma los ajustes actuales del panel de configuración
       game: null
     };
     const order = ['human', 'ai'];
@@ -156,8 +161,8 @@ export function fillDefaultsIfMissing(expectedIndex){
     if(isAiMode()){
       const game = State.room && State.room.game;
       if(!game || game.matchIndex !== expectedIndex || !game.turn || game.turn.resolved) return;
-      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5, precision:0.5 };
-      if(!game.turn.gkFinal) game.turn.gkFinal = { x:0.5, y:0.5 };
+      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5, precision:0.5, fluidity:0.5 };
+      if(!game.turn.gkFinal) game.turn.gkFinal = { x:0.5, y:0.5, fluidity:0.5 };
       notifyLocal();
       return;
     }
@@ -166,8 +171,8 @@ export function fillDefaultsIfMissing(expectedIndex){
       if(!game) return game;
       if(game.matchIndex !== expectedIndex) return; // ya avanzó, no tocar
       if(!game.turn || game.turn.resolved) return;
-      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5, precision:0.5 };
-      if(!game.turn.gkFinal) game.turn.gkFinal = { x:0.5, y:0.5 };
+      if(!game.turn.kickerFinal) game.turn.kickerFinal = { x:0.5, y:0.5, precision:0.5, fluidity:0.5 };
+      if(!game.turn.gkFinal) game.turn.gkFinal = { x:0.5, y:0.5, fluidity:0.5 };
       return game;
     }, (err) => { if(err) logError('fillDefaultsIfMissing.txn', err, { expectedIndex }); });
   } catch(e){
@@ -185,8 +190,12 @@ function tryResolveTurnReducer(game, expectedIndex){
   if(!game.matches || !game.matches[game.matchIndex]) return; // datos corruptos: abortar sin romper
 
   const m = game.matches[game.matchIndex];
-  const precision = typeof game.turn.kickerFinal.precision === 'number' ? game.turn.kickerFinal.precision : 0.5;
-  const outcome = resolveOutcome(game.turn.kickerFinal, game.turn.gkFinal, precision);
+  const cfg = sanitizeConfig(game.config);
+  const circlePrecision = typeof game.turn.kickerFinal.precision === 'number' ? game.turn.kickerFinal.precision : 0.5;
+  const kickFluidity = typeof game.turn.kickerFinal.fluidity === 'number' ? game.turn.kickerFinal.fluidity : 0.5;
+  // La fluidez del deslizamiento suma o resta sobre la precisión del círculo (no la reemplaza).
+  const precision = clamp01(circlePrecision + (kickFluidity - 0.5) * 2 * cfg.fluidityWeight);
+  const outcome = resolveOutcome(game.turn.kickerFinal, game.turn.gkFinal, precision, cfg);
   const adjustedKick = applyPrecision(game.turn.kickerFinal, precision);
   const goalScored = outcome === 'gol';
 
@@ -248,7 +257,7 @@ function advanceMatchReducer(game, expectedIndex){
   const nextIndex = game.matchIndex + 1;
   if(nextIndex < game.matches.length){
     game.matchIndex = nextIndex;
-    game.turn = freshTurn();
+    game.turn = freshTurn(sanitizeConfig(game.config));
     game.reveal = null;
     scheduleAiKickIfNeeded(game);
     return game;
@@ -265,7 +274,7 @@ function advanceMatchReducer(game, expectedIndex){
       game.matches = buildSuddenMatches(tied);
       game.matchIndex = 0;
       game.roundId = (game.roundId || 0) + 1;
-      game.turn = freshTurn();
+      game.turn = freshTurn(sanitizeConfig(game.config));
     }
   } else {
     const { max, tied } = computeTieBreak(game.suddenTied || [], game.suddenGoals || {});
@@ -280,7 +289,7 @@ function advanceMatchReducer(game, expectedIndex){
       game.matches = buildSuddenMatches(tied);
       game.matchIndex = 0;
       game.roundId = (game.roundId || 0) + 1;
-      game.turn = freshTurn();
+      game.turn = freshTurn(sanitizeConfig(game.config));
     }
   }
   game.reveal = null;
