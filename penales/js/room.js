@@ -3,6 +3,7 @@ import { db, ServerValue } from './firebase.js';
 import { State } from './state.js';
 import { randCode, randId } from './utils.js';
 import { logError } from './logger.js';
+import { sanitizeConfig } from './config.js';
 
 export async function createRoom(name){
   if(!db) return { ok:false, error:'No hay conexión con la base de datos. Recargá la página.' };
@@ -24,6 +25,7 @@ export async function createRoom(name){
       status: 'lobby',
       hostId: pid,
       createdAt: ServerValue.TIMESTAMP,
+      config: sanitizeConfig(State.config), // el host fija las reglas para los dos jugadores
       players: { [pid]: { name, order: 0 } }
     });
 
@@ -57,6 +59,8 @@ export async function joinRoom(name, code){
 
     State.pid = pid;
     State.roomCode = code;
+    // Nos alineamos con la configuración que fijó el host, para que los dos jueguen igual.
+    State.config = sanitizeConfig(data.config);
     return { ok:true };
   } catch(e){
     logError('joinRoom', e, { name, code });
