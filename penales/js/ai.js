@@ -109,10 +109,11 @@ export function aiChooseDive(){
   try{
     const exp = experienceFromGames(brain.gamesPlayed);
     const zone = weightedZonePick(brain.humanKickZones, exp);
-    return { x: zoneToX(zone), y: 0.25 + Math.random()*0.55 };
+    const fluidity = Math.min(0.9, 0.5 + Math.random()*0.3 + exp*0.1);
+    return { x: zoneToX(zone), y: 0.25 + Math.random()*0.55, fluidity };
   } catch(e){
     logError('ai.aiChooseDive', e);
-    return { x: 0.5, y: 0.5 };
+    return { x: 0.5, y: 0.5, fluidity: 0.5 };
   }
 }
 
@@ -136,7 +137,8 @@ export function aiChooseKick(){
     // La IA también depende de su propia "puntería" al patear — mejora un poco con la
     // experiencia, pero nunca es perfecta, para que siempre quede alguna chance de atajarle.
     const precision = 0.45 + Math.random()*0.3 + exp*0.15;
-    return { x: zoneToX(zone), y, precision: Math.min(0.92, precision) };
+    const fluidity = Math.min(0.9, 0.5 + Math.random()*0.3 + exp*0.1);
+    return { x: zoneToX(zone), y, precision: Math.min(0.92, precision), fluidity };
   } catch(e){
     logError('ai.aiChooseKick', e);
     return { x: 0.5, y: 0.3, precision: 0.5 };
