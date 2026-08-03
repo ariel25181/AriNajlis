@@ -5,9 +5,10 @@ export const State = {
   roomCode: null,
   pid: null,
   room: null,
+  config: null, // se completa en main.js al arrancar (loadLocalConfig), para evitar un import circular acá
   lastAutoAdvanceFor: null,
-  localKick: { x: 0.5, y: 0.5 },
-  localGk: { x: 0.5, y: 0.5 },
+  localKick: { x: 0.5, y: 0.5, fluidity: 0.5 },
+  localGk: { x: 0.5, y: 0.5, fluidity: 0.5 },
   submitted: false,
   countdownTimer: null,
   fallbackTimer: null,
@@ -16,8 +17,8 @@ export const State = {
 
 export function resetTurnLocalState(){
   State.submitted = false;
-  State.localKick = { x: 0.5, y: 0.5 };
-  State.localGk = { x: 0.5, y: 0.5 };
+  State.localKick = { x: 0.5, y: 0.5, fluidity: 0.5 };
+  State.localGk = { x: 0.5, y: 0.5, fluidity: 0.5 };
   clearTimeout(State.countdownTimer);
   clearTimeout(State.fallbackTimer);
 }

@@ -48,6 +48,18 @@
     padding:12px; font-family:'Bebas Neue'; font-size:16px; letter-spacing:1px; cursor:pointer; width:100%;}
   .or-sep{text-align:center; font-size:11px; opacity:0.5; letter-spacing:2px; margin:2px 0;}
 
+  .settings-row{ padding:10px 0; border-bottom:1px solid rgba(245,243,236,0.08); }
+  .settings-row:last-child{ border-bottom:none; }
+  .settings-row-top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+  .settings-row label{ font-size:12.5px; color:var(--chalk); opacity:0.85; }
+  .settings-value{ font-family:'Bebas Neue'; font-size:15px; color:var(--lime); min-width:52px; text-align:right; }
+  .settings-row input[type=range]{ width:100%; -webkit-appearance:none; height:8px; border-radius:6px;
+    background:linear-gradient(90deg, var(--lime), #7CE7FF); outline:none; }
+  .settings-row input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:20px; height:20px; border-radius:50%;
+    background:var(--chalk); border:3px solid var(--pitch-dark); cursor:pointer; }
+  .settings-row input[type=range]::-moz-range-thumb{ width:20px; height:20px; border-radius:50%;
+    background:var(--chalk); border:3px solid var(--pitch-dark); cursor:pointer; }
+
   .room-code-display{ text-align:center; }
   .room-code-display .code{ font-family:'Bebas Neue'; font-size:52px; color:var(--lime); letter-spacing:8px; }
   .room-code-display .lbl{ font-size:11px; opacity:0.7; letter-spacing:2px; text-transform:uppercase; }
@@ -258,7 +270,18 @@
     <div class="or-sep">— o —</div>
     <button class="big ai-btn" id="btnPlayAi">🤖 JUGAR CONTRA LA IA</button>
     <div class="error-text" id="entryError"></div>
+    <a class="back-link" href="#" id="btnOpenSettings">⚙️ Ajustes de jugabilidad</a>
     <a class="back-link" href="../index.html">← Volver al arcade</a>
+  </div>
+
+  <!-- AJUSTES -->
+  <div id="screen-settings" class="screen">
+    <h1>⚙️ AJUSTES</h1>
+    <div class="subtitle">Afecta el modo vs IA y las salas que vos crees</div>
+    <div class="card" id="settingsFields"></div>
+    <button class="big" id="btnSaveSettings">GUARDAR</button>
+    <button class="ghost" id="btnResetSettings" style="margin-top:8px;">Restablecer valores por defecto</button>
+    <a class="back-link" href="#" id="btnBackFromSettings" style="margin-top:10px;">← Volver</a>
   </div>
 
   <!-- LOBBY -->

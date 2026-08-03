@@ -10,9 +10,13 @@ import { renderGame } from './ui-game.js';
 import { renderFinal } from './ui-final.js';
 import { unlockAudio } from './sound.js';
 import { startAiGame } from './turn.js';
+import { initSettingsWiring } from './ui-settings.js';
 
 window.addEventListener('error', e => logError('window.onerror', e.error || e.message, { filename: e.filename, lineno: e.lineno }));
 window.addEventListener('unhandledrejection', e => logError('unhandledrejection', e.reason));
+
+// Carga la configuración guardada (o los defaults) y engancha el botón de ⚙️ Ajustes.
+initSettingsWiring();
 
 // En modo IA no hay Firebase escuchando cambios — este callback cumple el mismo rol
 // que attachRoomListener(dispatchRender), pero llamado a mano cada vez que el estado
