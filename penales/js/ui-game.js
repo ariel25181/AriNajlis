@@ -10,10 +10,6 @@ import { submitLocalFinal, fillDefaultsIfMissing, tryResolveTurn, advanceMatch }
 import { initScene3D, disposeScene3D, resetPose, animateShot, setKickerTell, resize as resizeScene3D } from './scene2d.js';
 import { unlockAudio, playTick, playKick, playGoal, playSave, playWide } from './sound.js';
 
-// Coordenadas del "arco" dentro de la escena, en % de la caja .scene — se usan solo
-// para ubicar la capa 2D de retículas (el dibujo del arco lo hace scene2d.js).
-const GOAL_BOX = { x0: 15, x1: 85, y0: 10, y1: 55 };
-
 let precisionRafId = null;
 let precisionCycleStart = 0;
 
@@ -139,8 +135,6 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
       <div class="scene" id="scene">
         <canvas id="three-canvas"></canvas>
         ${hudPlatesHTML(nameOf(m.kicker), nameOf(m.gk))}
-        <div class="reticle" id="kickReticle" style="display:none;"></div>
-        <div class="reticle gk" id="gkReticle" style="display:none;"></div>
         <div class="fx-flash" id="fxFlash"></div>
         <div class="drag-surface" id="dragSurface"></div>
       </div>
@@ -150,11 +144,8 @@ function buildInteractiveScreen(body, m, iAmKicker, iAmGk, turn){
 
     safeCall('initScene3D', () => initScene3D(el('three-canvas'), { kicker: nameOf(m.kicker), gk: nameOf(m.gk) }));
     safeCall('resetPose', () => resetPose());
-    positionKickReticle(0.5, 0.5);
-    positionGkReticle(0.5, 0.5);
 
     if(iAmKicker || iAmGk){
-      el(iAmKicker ? 'kickReticle' : 'gkReticle').style.display = 'flex';
       wireSwipeControls(iAmKicker, iAmGk);
       scheduleFallbackDefaults(turn);
     }
@@ -212,10 +203,8 @@ function wireSwipeControls(iAmKicker, iAmGk){
     function applyTarget(target){
       if(iAmKicker){
         State.localKick.x = target.x; State.localKick.y = target.y;
-        positionKickReticle(target.x, target.y);
       } else {
         State.localGk.x = target.x; State.localGk.y = target.y;
-        positionGkReticle(target.x, target.y);
       }
     }
 
@@ -414,15 +403,6 @@ function updateRing(remaining, duration){
   ringProg.setAttribute('stroke-dashoffset', (119*(1-frac)).toFixed(1));
   if(ring) ring.classList.toggle('urgent', remaining <= 1500);
 }
-
-function toScenePct(x, y){
-  return {
-    left: GOAL_BOX.x0 + x*(GOAL_BOX.x1-GOAL_BOX.x0),
-    top: GOAL_BOX.y0 + y*(GOAL_BOX.y1-GOAL_BOX.y0)
-  };
-}
-function positionKickReticle(x,y){ const p = toScenePct(x,y); const r = el('kickReticle'); if(r){ r.style.left=p.left+'%'; r.style.top=p.top+'%'; } }
-function positionGkReticle(x,y){ const p = toScenePct(x,y); const r = el('gkReticle'); if(r){ r.style.left=p.left+'%'; r.style.top=p.top+'%'; } }
 
 function renderResult(body, reveal, m){
   try{
